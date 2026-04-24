@@ -76,28 +76,35 @@ void Game::update(float) {
     double now = glfwGetTime();
     int ticks = tickClock_.advance(now);
 
-    input_.update();
-
-    // Per-frame input: ESC, mouse look (must respond every frame)
+    // Handle input BEFORE update() — update() copies current→previous,
+    // which would make isKeyPressed() always false
     handleFrameInput();
 
+    // Run fixed-rate game ticks
     for (int i = 0; i < ticks; i++) {
         gameTick();
     }
 
+    // Move input update to AFTER handling — prepares for next frame
+    input_.update();
     input_.postUpdate();
 
     buildMeshes();
+
+    // Interpolate player position between ticks for smooth rendering
+    float partial = tickClock_.getPartialTick();
+    glm::vec3 renderPos = glm::mix(prevPlayerPos_, player_.position, partial);
+    glm::vec3 renderEye = renderPos + glm::vec3(0.0f, PLAYER_EYE_HEIGHT, 0.0f);
 
     float aspect = static_cast<float>(engine_.getWindowWidth()) /
                    static_cast<float>(engine_.getWindowHeight());
 
     UniformBufferObject ubo{};
     ubo.model = glm::mat4(1.0f);
-    ubo.view  = player_.getViewMatrix();
+    ubo.view  = glm::lookAt(renderEye, renderEye + player_.getForward(), glm::vec3(0, 1, 0));
     ubo.proj  = player_.getProjectionMatrix(aspect);
     ubo.fogColor = glm::vec4(0.53f, 0.81f, 0.92f, 1.0f);
-    ubo.viewPos  = glm::vec4(player_.getEyePosition(), 1.0f);
+    ubo.viewPos  = glm::vec4(renderEye, 1.0f);
     float fogStart = static_cast<float>((RENDER_DISTANCE - 2) * CHUNK_SIZE);
     float fogEnd   = static_cast<float>(RENDER_DISTANCE * CHUNK_SIZE);
     ubo.fogRange = glm::vec2(fogStart, fogEnd);
@@ -111,6 +118,9 @@ void Game::update(float) {
 
 void Game::gameTick() {
     const float dt = static_cast<float>(TickClock::TICK_DURATION);
+
+    // Save position before physics for render interpolation
+    prevPlayerPos_ = player_.position;
 
     handleTickInput();
     Physics::update(player_, world_, dt);
