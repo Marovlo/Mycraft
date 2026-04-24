@@ -13,9 +13,13 @@ void InputManager::init(GLFWwindow* window) {
 void InputManager::update() {
     previousKeys_ = currentKeys_;
     previousMouseButtons_ = currentMouseButtons_;
+}
 
-    // Mouse delta is computed in callback; reset after consumption
-    // (delta is accumulated between frames via callback)
+void InputManager::postUpdate() {
+    // Reset mouse delta after it has been consumed by game logic this frame.
+    // Next frame's delta will be set by cursorPosCallback during glfwPollEvents.
+    mouseDeltaX_ = 0;
+    mouseDeltaY_ = 0;
 }
 
 bool InputManager::isKeyDown(int key) const {

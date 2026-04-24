@@ -10,6 +10,9 @@ public:
     // Per-frame update (call before game logic)
     void update();
 
+    // Post-frame update (call after game logic consumes mouse delta)
+    void postUpdate();
+
     // Key state
     bool isKeyDown(int key) const;
     bool isKeyPressed(int key) const;   // Just pressed this frame

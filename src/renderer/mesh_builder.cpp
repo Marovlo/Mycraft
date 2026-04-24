@@ -1,13 +1,15 @@
 #include "mesh_builder.h"
 
 MeshBuilder::FaceQuad MeshBuilder::getFaceQuad(Direction dir) {
+    // Vertices must be counter-clockwise when viewed from the face's outward normal direction.
+    // Triangles: v0→v1→v2, v0→v2→v3
     switch (dir) {
         case Direction::PosX: return {{1,0,0},{1,1,0},{1,1,1},{1,0,1}};
         case Direction::NegX: return {{0,0,1},{0,1,1},{0,1,0},{0,0,0}};
         case Direction::PosY: return {{0,1,1},{1,1,1},{1,1,0},{0,1,0}};
         case Direction::NegY: return {{0,0,0},{1,0,0},{1,0,1},{0,0,1}};
-        case Direction::PosZ: return {{0,0,1},{0,1,1},{1,1,1},{1,0,1}};
-        case Direction::NegZ: return {{1,0,0},{1,1,0},{0,1,0},{0,0,0}};
+        case Direction::PosZ: return {{1,0,1},{1,1,1},{0,1,1},{0,0,1}};  // fixed: reversed winding
+        case Direction::NegZ: return {{0,0,0},{0,1,0},{1,1,0},{1,0,0}};  // fixed: reversed winding
         default: return {};
     }
 }
@@ -16,13 +18,15 @@ void MeshBuilder::addFace(const glm::vec3& blockPos, Direction dir, uint16_t tex
     FaceQuad quad = getFaceQuad(dir);
     glm::vec3 normal = directionNormal(dir);
 
-    // UV: encode texture ID as a normalized value for now.
-    // Later this will map to actual atlas coordinates.
-    float texU = static_cast<float>(texId);
-    glm::vec2 uv0(texU, 0.0f);
-    glm::vec2 uv1(texU, 1.0f);
-    glm::vec2 uv2(texU + 1.0f, 1.0f);
-    glm::vec2 uv3(texU + 1.0f, 0.0f);
+    // Normalize UV to atlas coordinates: each tile occupies [texId/N, (texId+1)/N] in U
+    float invN = 1.0f / static_cast<float>(atlasTileCount_);
+    float uMin = static_cast<float>(texId) * invN;
+    float uMax = static_cast<float>(texId + 1) * invN;
+
+    glm::vec2 uv0(uMin, 0.0f);
+    glm::vec2 uv1(uMin, 1.0f);
+    glm::vec2 uv2(uMax, 1.0f);
+    glm::vec2 uv3(uMax, 0.0f);
 
     uint32_t baseIdx = static_cast<uint32_t>(vertices_.size());
 
@@ -43,6 +47,11 @@ void MeshBuilder::addFace(const glm::vec3& blockPos, Direction dir, uint16_t tex
 void MeshBuilder::build(const World& world, const Chunk& chunk) {
     vertices_.clear();
     indices_.clear();
+
+    // Pre-allocate: rough estimate — exposed surface faces are a small fraction of total.
+    // A typical chunk has ~2000-8000 visible faces. Reserve conservatively.
+    vertices_.reserve(4096 * 4);
+    indices_.reserve(4096 * 6);
 
     const auto& registry = BlockRegistry::instance();
 
@@ -66,11 +75,21 @@ void MeshBuilder::build(const World& world, const Chunk& chunk) {
                     Direction dir = static_cast<Direction>(d);
                     glm::ivec3 offset = directionOffset(dir);
 
-                    int nx = wx + offset.x;
-                    int ny = y  + offset.y;
-                    int nz = wz + offset.z;
+                    int lnx = x + offset.x;
+                    int lny = y + offset.y;
+                    int lnz = z + offset.z;
 
-                    BlockId neighbor = world.getBlock(nx, ny, nz);
+                    // Fast path: neighbor is within the same chunk — avoid world hash lookup
+                    BlockId neighbor;
+                    if (lnx >= 0 && lnx < CHUNK_SIZE &&
+                        lny >= 0 && lny < CHUNK_HEIGHT &&
+                        lnz >= 0 && lnz < CHUNK_SIZE) {
+                        neighbor = chunk.getBlock(lnx, lny, lnz);
+                    } else {
+                        // Border: query world (cross-chunk or out-of-bounds)
+                        neighbor = world.getBlock(wx + offset.x, y + offset.y, wz + offset.z);
+                    }
+
                     const auto& neighborProps = registry.get(neighbor);
 
                     // Determine if this face should be rendered
@@ -79,8 +98,6 @@ void MeshBuilder::build(const World& world, const Chunk& chunk) {
                     if (neighborProps.isAir()) {
                         shouldRender = true;
                     } else if (!neighborProps.isOpaque) {
-                        // Render face if neighbor is transparent/liquid
-                        // But don't render same-type liquid faces against each other
                         if (props.isLiquid && neighborProps.isLiquid && block == neighbor) {
                             shouldRender = false;
                         } else {

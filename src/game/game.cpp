@@ -54,8 +54,13 @@ void Game::update(float dt) {
 
     input_.update();
     handleInput(dt);
+    input_.postUpdate();
 
     Physics::update(player_, world_, dt);
+
+    // Cache player chunk position for this frame (used by multiple functions)
+    playerChunkX_ = blockToChunk(static_cast<int>(std::floor(player_.position.x)));
+    playerChunkZ_ = blockToChunk(static_cast<int>(std::floor(player_.position.z)));
 
     updateChunks();
     buildMeshes();
@@ -136,35 +141,47 @@ void Game::handleInput(float dt) {
 }
 
 void Game::updateChunks() {
-    int pcx = blockToChunk(static_cast<int>(std::floor(player_.position.x)));
-    int pcz = blockToChunk(static_cast<int>(std::floor(player_.position.z)));
-
     for (int dx = -RENDER_DISTANCE; dx <= RENDER_DISTANCE; dx++) {
         for (int dz = -RENDER_DISTANCE; dz <= RENDER_DISTANCE; dz++) {
-            // Circular render distance
             if (dx * dx + dz * dz > RENDER_DISTANCE * RENDER_DISTANCE) continue;
 
-            int cx = pcx + dx, cz = pcz + dz;
+            int cx = playerChunkX_ + dx, cz = playerChunkZ_ + dz;
             auto& chunk = world_.getOrCreateChunk(cx, cz);
 
             if (!chunk.hasData()) {
                 terrainGen_->generate(chunk);
+                world_.markChunkDirty(cx - 1, cz);
+                world_.markChunkDirty(cx + 1, cz);
+                world_.markChunkDirty(cx, cz - 1);
+                world_.markChunkDirty(cx, cz + 1);
             }
         }
     }
 }
 
 void Game::buildMeshes() {
-    int pcx = blockToChunk(static_cast<int>(std::floor(player_.position.x)));
-    int pcz = blockToChunk(static_cast<int>(std::floor(player_.position.z)));
-
     int meshBuilds = 0;
     for (auto& [key, chunk] : world_.chunks()) {
         if (!chunk.isMeshDirty()) continue;
 
-        int dx = chunk.chunkX() - pcx;
-        int dz = chunk.chunkZ() - pcz;
+        int dx = chunk.chunkX() - playerChunkX_;
+        int dz = chunk.chunkZ() - playerChunkZ_;
         if (dx * dx + dz * dz > (RENDER_DISTANCE + 1) * (RENDER_DISTANCE + 1)) continue;
+
+        // Skip if any neighbor chunk hasn't been generated yet —
+        // building now would produce incorrect face culling at borders
+        int cx = chunk.chunkX();
+        int cz = chunk.chunkZ();
+        const Chunk* nxp = world_.getChunk(cx + 1, cz);
+        const Chunk* nxn = world_.getChunk(cx - 1, cz);
+        const Chunk* nzp = world_.getChunk(cx, cz + 1);
+        const Chunk* nzn = world_.getChunk(cx, cz - 1);
+        if ((!nxp || !nxp->hasData()) ||
+            (!nxn || !nxn->hasData()) ||
+            (!nzp || !nzp->hasData()) ||
+            (!nzn || !nzn->hasData())) {
+            continue;
+        }
 
         meshBuilder_.build(world_, chunk);
 
@@ -184,23 +201,21 @@ void Game::buildMeshes() {
 }
 
 void Game::unloadDistantChunks() {
-    int pcx = blockToChunk(static_cast<int>(std::floor(player_.position.x)));
-    int pcz = blockToChunk(static_cast<int>(std::floor(player_.position.z)));
-
     int unloadDist = RENDER_DISTANCE + 3;
+    int unloadDistSq = unloadDist * unloadDist;
 
-    std::vector<ChunkKey> toRemove;
+    chunksToRemove_.clear();
     for (auto& [key, chunk] : world_.chunks()) {
-        int dx = chunk.chunkX() - pcx;
-        int dz = chunk.chunkZ() - pcz;
-        if (dx * dx + dz * dz > unloadDist * unloadDist) {
+        int dx = chunk.chunkX() - playerChunkX_;
+        int dz = chunk.chunkZ() - playerChunkZ_;
+        if (dx * dx + dz * dz > unloadDistSq) {
             if (chunk.hasMesh()) {
                 engine_.destroyMesh(chunk.getMesh());
             }
-            toRemove.push_back(key);
+            chunksToRemove_.push_back(key);
         }
     }
-    for (auto& k : toRemove) {
+    for (auto& k : chunksToRemove_) {
         world_.removeChunk(k.x, k.z);
     }
 }
@@ -267,4 +282,7 @@ void Game::generateBlockTexture() {
     blockTextureAtlas_ = engine_.uploadTexture(pixels.data(), atlasW, atlasH, 4);
     engine_.updateTextureDescriptor(blockTextureAtlas_.imageView, engine_.getDefaultSampler());
     hasTextureAtlas_ = true;
+
+    // Tell mesh builder how many tiles are in the atlas for UV normalization
+    meshBuilder_.setAtlasTileCount(texCount);
 }

@@ -658,41 +658,53 @@ Mesh VulkanEngine::uploadMesh(const std::vector<Vertex>& vertices, const std::ve
     Mesh mesh;
     mesh.indexCount = static_cast<uint32_t>(indices.size());
 
-    // Vertex buffer
     VkDeviceSize vbSize = sizeof(Vertex) * vertices.size();
-    auto staging = createBuffer(vbSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_ONLY);
+    VkDeviceSize ibSize = sizeof(uint32_t) * indices.size();
+    VkDeviceSize totalSize = vbSize + ibSize;
+
+    // Single staging buffer for both vertex and index data
+    auto staging = createBuffer(totalSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_ONLY);
 
     void* data;
     vmaMapMemory(allocator_, staging.allocation, &data);
     memcpy(data, vertices.data(), vbSize);
+    memcpy(static_cast<char*>(data) + vbSize, indices.data(), ibSize);
     vmaUnmapMemory(allocator_, staging.allocation);
 
     mesh.vertexBuffer = createBuffer(vbSize,
         VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
         VMA_MEMORY_USAGE_GPU_ONLY);
-    copyBuffer(staging.buffer, mesh.vertexBuffer.buffer, vbSize);
-    vmaDestroyBuffer(allocator_, staging.buffer, staging.allocation);
-
-    // Index buffer
-    VkDeviceSize ibSize = sizeof(uint32_t) * indices.size();
-    staging = createBuffer(ibSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_ONLY);
-
-    vmaMapMemory(allocator_, staging.allocation, &data);
-    memcpy(data, indices.data(), ibSize);
-    vmaUnmapMemory(allocator_, staging.allocation);
-
     mesh.indexBuffer = createBuffer(ibSize,
         VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
         VMA_MEMORY_USAGE_GPU_ONLY);
-    copyBuffer(staging.buffer, mesh.indexBuffer.buffer, ibSize);
+
+    // Single command buffer for both copies
+    auto cmd = beginSingleTimeCommands();
+    VkBufferCopy vbCopy{};
+    vbCopy.srcOffset = 0;
+    vbCopy.size = vbSize;
+    vkCmdCopyBuffer(cmd, staging.buffer, mesh.vertexBuffer.buffer, 1, &vbCopy);
+
+    VkBufferCopy ibCopy{};
+    ibCopy.srcOffset = vbSize;
+    ibCopy.size = ibSize;
+    vkCmdCopyBuffer(cmd, staging.buffer, mesh.indexBuffer.buffer, 1, &ibCopy);
+    endSingleTimeCommands(cmd);
+
     vmaDestroyBuffer(allocator_, staging.buffer, staging.allocation);
 
     return mesh;
 }
 
 void VulkanEngine::destroyMesh(Mesh& mesh) {
-    vmaDestroyBuffer(allocator_, mesh.vertexBuffer.buffer, mesh.vertexBuffer.allocation);
-    vmaDestroyBuffer(allocator_, mesh.indexBuffer.buffer, mesh.indexBuffer.allocation);
+    if (mesh.vertexBuffer.allocation) {
+        vmaDestroyBuffer(allocator_, mesh.vertexBuffer.buffer, mesh.vertexBuffer.allocation);
+        mesh.vertexBuffer = {};
+    }
+    if (mesh.indexBuffer.allocation) {
+        vmaDestroyBuffer(allocator_, mesh.indexBuffer.buffer, mesh.indexBuffer.allocation);
+        mesh.indexBuffer = {};
+    }
     mesh.indexCount = 0;
 }
 
@@ -766,8 +778,13 @@ AllocatedImage VulkanEngine::uploadTexture(const uint8_t* pixels, int width, int
 }
 
 void VulkanEngine::destroyTexture(AllocatedImage& image) {
-    vkDestroyImageView(device_, image.imageView, nullptr);
-    vmaDestroyImage(allocator_, image.image, image.allocation);
+    if (image.imageView) {
+        vkDestroyImageView(device_, image.imageView, nullptr);
+    }
+    if (image.allocation) {
+        vmaDestroyImage(allocator_, image.image, image.allocation);
+    }
+    image = {};
 }
 
 void VulkanEngine::updateTextureDescriptor(VkImageView imageView, VkSampler sampler) {
@@ -950,8 +967,11 @@ void VulkanEngine::cleanup() {
     vkDeviceWaitIdle(device_);
 
     for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-        vmaUnmapMemory(allocator_, frames_[i].uniformBuffer.allocation);
-        vmaDestroyBuffer(allocator_, frames_[i].uniformBuffer.buffer, frames_[i].uniformBuffer.allocation);
+        if (frames_[i].uniformBuffer.allocation) {
+            vmaUnmapMemory(allocator_, frames_[i].uniformBuffer.allocation);
+            vmaDestroyBuffer(allocator_, frames_[i].uniformBuffer.buffer, frames_[i].uniformBuffer.allocation);
+            frames_[i].uniformBuffer = {};
+        }
 
         vkDestroySemaphore(device_, frames_[i].imageAvailableSemaphore, nullptr);
         vkDestroySemaphore(device_, frames_[i].renderFinishedSemaphore, nullptr);

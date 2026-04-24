@@ -40,4 +40,11 @@ private:
     // Texture atlas
     AllocatedImage blockTextureAtlas_;
     bool hasTextureAtlas_ = false;
+
+    // Cached per-frame player chunk position (avoid recomputing in every function)
+    int playerChunkX_ = 0;
+    int playerChunkZ_ = 0;
+
+    // Reusable buffer to avoid per-frame heap allocation in unloadDistantChunks
+    std::vector<ChunkKey> chunksToRemove_;
 };

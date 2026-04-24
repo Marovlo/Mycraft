@@ -12,6 +12,9 @@
 // and culling hidden faces.
 class MeshBuilder {
 public:
+    // Set the number of tiles in the texture atlas (must be called before build)
+    void setAtlasTileCount(uint16_t count) { atlasTileCount_ = count; }
+
     // Build mesh data for a chunk.
     // Requires access to the world for cross-chunk neighbor lookups.
     void build(const World& world, const Chunk& chunk);
@@ -25,6 +28,7 @@ public:
 private:
     std::vector<Vertex> vertices_;
     std::vector<uint32_t> indices_;
+    uint16_t atlasTileCount_ = 16; // default
 
     // Face geometry for each direction
     struct FaceQuad {
