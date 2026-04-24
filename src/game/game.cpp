@@ -123,7 +123,11 @@ void Game::gameTick() {
 
 void Game::handleInput() {
     if (input_.isKeyPressed(GLFW_KEY_ESCAPE)) {
-        input_.toggleCursorLock();
+        if (input_.isCursorLocked()) {
+            input_.toggleCursorLock();
+        } else {
+            glfwSetWindowShouldClose(engine_.getWindow(), GLFW_TRUE);
+        }
     }
 
     if (input_.isCursorLocked()) {
