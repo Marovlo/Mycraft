@@ -122,6 +122,12 @@ public:
     // UI Mesh (different vertex format)
     Mesh uploadUIMesh(const std::vector<UIVertex>& vertices, const std::vector<uint32_t>& indices);
 
+    // Dynamic buffer (CPU writable, GPU readable — no staging needed)
+    // For UI: create once, update every frame via mapped pointer
+    AllocatedBuffer createDynamicBuffer(VkDeviceSize size, VkBufferUsageFlags usage);
+    void* mapBuffer(AllocatedBuffer& buffer);
+    void unmapBuffer(AllocatedBuffer& buffer);
+
     // Texture
     AllocatedImage uploadTexture(const uint8_t* pixels, int width, int height, int channels);
     void destroyTexture(AllocatedImage& image);

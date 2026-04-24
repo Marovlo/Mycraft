@@ -876,6 +876,30 @@ Mesh VulkanEngine::uploadUIMesh(const std::vector<UIVertex>& vertices, const std
     return mesh;
 }
 
+AllocatedBuffer VulkanEngine::createDynamicBuffer(VkDeviceSize size, VkBufferUsageFlags usage) {
+    VkBufferCreateInfo bufInfo{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+    bufInfo.size = size;
+    bufInfo.usage = usage;
+    bufInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+    VmaAllocationCreateInfo allocInfo{};
+    allocInfo.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
+
+    AllocatedBuffer buffer;
+    vmaCreateBuffer(allocator_, &bufInfo, &allocInfo, &buffer.buffer, &buffer.allocation, nullptr);
+    return buffer;
+}
+
+void* VulkanEngine::mapBuffer(AllocatedBuffer& buffer) {
+    void* data;
+    vmaMapMemory(allocator_, buffer.allocation, &data);
+    return data;
+}
+
+void VulkanEngine::unmapBuffer(AllocatedBuffer& buffer) {
+    vmaUnmapMemory(allocator_, buffer.allocation);
+}
+
 // ========== Texture ==========
 
 AllocatedImage VulkanEngine::uploadTexture(const uint8_t* pixels, int width, int height, int channels) {

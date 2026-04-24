@@ -2,12 +2,24 @@
 
 void UIRenderer::init(VulkanEngine* engine) {
     engine_ = engine;
+
+    // Pre-allocate dynamic buffers
+    vertexBufferSize_ = sizeof(UIVertex) * INITIAL_VERTS;
+    indexBufferSize_ = sizeof(uint32_t) * INITIAL_INDICES;
+    vertexBuffer_ = engine_->createDynamicBuffer(vertexBufferSize_, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+    indexBuffer_ = engine_->createDynamicBuffer(indexBufferSize_, VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
 }
 
 void UIRenderer::destroy() {
-    if (engine_ && lastMesh_.indexCount > 0) {
-        engine_->destroyMesh(lastMesh_);
-        lastMesh_ = {};
+    if (engine_) {
+        if (vertexBuffer_.allocation) {
+            vmaDestroyBuffer(engine_->getAllocator(), vertexBuffer_.buffer, vertexBuffer_.allocation);
+            vertexBuffer_ = {};
+        }
+        if (indexBuffer_.allocation) {
+            vmaDestroyBuffer(engine_->getAllocator(), indexBuffer_.buffer, indexBuffer_.allocation);
+            indexBuffer_ = {};
+        }
     }
     engine_ = nullptr;
 }
@@ -46,12 +58,35 @@ void UIRenderer::drawCrosshair(float screenW, float screenH, float size, float t
     float hs = size * 0.5f;
     float ht = thickness * 0.5f;
 
-    glm::vec4 color(1.0f, 1.0f, 1.0f, 0.85f);
+    glm::vec4 color(1.0f, 1.0f, 1.0f, 0.9f);
 
     // Horizontal bar
     drawRect(cx - hs, cy - ht, size, thickness, color);
     // Vertical bar
     drawRect(cx - ht, cy - hs, thickness, size, color);
+}
+
+void UIRenderer::ensureBufferCapacity() {
+    VkDeviceSize neededVB = sizeof(UIVertex) * vertices_.size();
+    VkDeviceSize neededIB = sizeof(uint32_t) * indices_.size();
+
+    // Grow vertex buffer if needed
+    if (neededVB > vertexBufferSize_) {
+        if (vertexBuffer_.allocation) {
+            vmaDestroyBuffer(engine_->getAllocator(), vertexBuffer_.buffer, vertexBuffer_.allocation);
+        }
+        vertexBufferSize_ = neededVB * 2;  // double to amortize
+        vertexBuffer_ = engine_->createDynamicBuffer(vertexBufferSize_, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+    }
+
+    // Grow index buffer if needed
+    if (neededIB > indexBufferSize_) {
+        if (indexBuffer_.allocation) {
+            vmaDestroyBuffer(engine_->getAllocator(), indexBuffer_.buffer, indexBuffer_.allocation);
+        }
+        indexBufferSize_ = neededIB * 2;
+        indexBuffer_ = engine_->createDynamicBuffer(indexBufferSize_, VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
+    }
 }
 
 void UIRenderer::flush(VkCommandBuffer cmd, uint32_t screenWidth, uint32_t screenHeight) {
@@ -61,13 +96,22 @@ void UIRenderer::flush(VkCommandBuffer cmd, uint32_t screenWidth, uint32_t scree
         return;
     }
 
-    // Upload UI vertices to GPU (small per-frame upload, acceptable for UI)
-    Mesh uiMesh = engine_->uploadUIMesh(vertices_, indices_);
+    ensureBufferCapacity();
+
+    // Direct memcpy — no staging, no command submit, no GPU stall
+    void* vData = engine_->mapBuffer(vertexBuffer_);
+    memcpy(vData, vertices_.data(), sizeof(UIVertex) * vertices_.size());
+    engine_->unmapBuffer(vertexBuffer_);
+
+    void* iData = engine_->mapBuffer(indexBuffer_);
+    memcpy(iData, indices_.data(), sizeof(uint32_t) * indices_.size());
+    engine_->unmapBuffer(indexBuffer_);
+
+    uint32_t indexCount = static_cast<uint32_t>(indices_.size());
 
     // Switch to UI pipeline
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, engine_->getUIPipeline());
 
-    // Set viewport and scissor (same as 3D)
     VkViewport viewport{};
     viewport.width = static_cast<float>(screenWidth);
     viewport.height = static_cast<float>(screenHeight);
@@ -79,34 +123,22 @@ void UIRenderer::flush(VkCommandBuffer cmd, uint32_t screenWidth, uint32_t scree
     scissor.extent = {screenWidth, screenHeight};
     vkCmdSetScissor(cmd, 0, 1, &scissor);
 
-    // Push screen size
     UIPushConstants pc{};
     pc.screenSize = {static_cast<float>(screenWidth), static_cast<float>(screenHeight)};
     vkCmdPushConstants(cmd, engine_->getUIPipelineLayout(),
                        VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(UIPushConstants), &pc);
 
-    // Bind descriptor set (same as 3D — has the texture sampler)
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
         engine_->getUIPipelineLayout(), 0, 1,
         &engine_->getCurrentFrame().descriptorSet, 0, nullptr);
 
-    // Draw
-    VkBuffer vb[] = {uiMesh.vertexBuffer.buffer};
+    VkBuffer vb[] = {vertexBuffer_.buffer};
     VkDeviceSize offsets[] = {0};
     vkCmdBindVertexBuffers(cmd, 0, 1, vb, offsets);
-    vkCmdBindIndexBuffer(cmd, uiMesh.indexBuffer.buffer, 0, VK_INDEX_TYPE_UINT32);
-    vkCmdDrawIndexed(cmd, uiMesh.indexCount, 1, 0, 0, 0);
+    vkCmdBindIndexBuffer(cmd, indexBuffer_.buffer, 0, VK_INDEX_TYPE_UINT32);
+    vkCmdDrawIndexed(cmd, indexCount, 1, 0, 0, 0);
 
-    // Cleanup temp mesh (will be freed next frame... actually we need to defer this)
-    // For safety, destroy after queue is idle. But that's expensive.
-    // Better: keep the mesh alive until next frame's flush.
-    // Simple approach: store last frame's mesh and destroy it at start of next flush.
-    if (lastMesh_.indexCount > 0) {
-        engine_->destroyMesh(lastMesh_);
-    }
-    lastMesh_ = uiMesh;
-
-    // Re-bind 3D pipeline for any subsequent 3D draws (shouldn't happen, but safe)
+    // Restore 3D pipeline
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, engine_->getPipeline());
 
     vertices_.clear();

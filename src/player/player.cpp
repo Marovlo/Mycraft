@@ -4,7 +4,7 @@
 #include <algorithm>
 
 Player::Player() {
-    position = glm::vec3(0.0f, 80.0f, 0.0f);
+    position = glm::vec3(0.0f, 100.0f, 0.0f);
     velocity = glm::vec3(0.0f);
 }
 

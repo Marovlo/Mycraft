@@ -100,7 +100,7 @@ void Game::update(float) {
     // Queue UI draws for this frame
     float sw = static_cast<float>(engine_.getWindowWidth());
     float sh = static_cast<float>(engine_.getWindowHeight());
-    uiRenderer_.drawCrosshair(sw, sh, 20.0f, 2.0f);
+    uiRenderer_.drawCrosshair(sw, sh, 30.0f, 3.0f);
 
     engine_.updateUniformBuffer(ubo);
 }
