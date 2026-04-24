@@ -16,7 +16,7 @@ Game::~Game() {
             engine_.destroyMesh(chunk.getMesh());
         }
     }
-    crosshair_.destroy(engine_);
+    uiRenderer_.destroy();
     textureAtlas_.destroy(engine_);
     engine_.cleanup();
 }
@@ -33,6 +33,7 @@ void Game::init() {
     terrainGen_ = std::make_unique<OverworldGenerator>(42);
 
     loadTextureAtlas();
+    uiRenderer_.init(&engine_);
 
     engine_.onUpdate = [this](float) { update(0.0f); };
     engine_.onRender = [this](VkCommandBuffer cmd, uint32_t) { render(cmd); };
@@ -96,10 +97,10 @@ void Game::update(float) {
     float fogStart = static_cast<float>((RENDER_DISTANCE - 2) * CHUNK_SIZE);
     float fogEnd   = static_cast<float>(RENDER_DISTANCE * CHUNK_SIZE);
     ubo.fogRange = glm::vec2(fogStart, fogEnd);
-    // Update crosshair position
-    crosshair_.update(engine_, player_.getEyePosition(),
-                      player_.getForward(), player_.getRight(),
-                      glm::vec3(0, 1, 0));
+    // Queue UI draws for this frame
+    float sw = static_cast<float>(engine_.getWindowWidth());
+    float sh = static_cast<float>(engine_.getWindowHeight());
+    uiRenderer_.drawCrosshair(sw, sh, 20.0f, 2.0f);
 
     engine_.updateUniformBuffer(ubo);
 }
@@ -266,6 +267,6 @@ void Game::render(VkCommandBuffer cmd) {
         vkCmdDrawIndexed(cmd, mesh.indexCount, 1, 0, 0, 0);
     }
 
-    // Draw crosshair on top
-    crosshair_.render(cmd);
+    // Draw 2D UI on top
+    uiRenderer_.flush(cmd, engine_.getWindowWidth(), engine_.getWindowHeight());
 }

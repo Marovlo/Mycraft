@@ -84,6 +84,21 @@ struct FrameData {
     VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
 };
 
+// --- UI Vertex (2D overlay) ---
+struct UIVertex {
+    glm::vec2 position;   // screen-space pixels
+    glm::vec2 texCoord;
+    glm::vec4 color;
+
+    static VkVertexInputBindingDescription getBindingDescription();
+    static std::array<VkVertexInputAttributeDescription, 3> getAttributeDescriptions();
+};
+
+// --- UI Push Constants ---
+struct UIPushConstants {
+    glm::vec2 screenSize;
+};
+
 constexpr int MAX_FRAMES_IN_FLIGHT = 2;
 
 // --- Vulkan Engine ---
@@ -103,6 +118,9 @@ public:
     // Mesh management
     Mesh uploadMesh(const std::vector<Vertex>& vertices, const std::vector<uint32_t>& indices);
     void destroyMesh(Mesh& mesh);
+
+    // UI Mesh (different vertex format)
+    Mesh uploadUIMesh(const std::vector<UIVertex>& vertices, const std::vector<uint32_t>& indices);
 
     // Texture
     AllocatedImage uploadTexture(const uint8_t* pixels, int width, int height, int channels);
@@ -127,6 +145,12 @@ public:
     void updateTextureDescriptor(VkImageView imageView, VkSampler sampler);
     VkSampler getDefaultSampler() const { return defaultSampler_; }
 
+    // --- 2D UI Rendering ---
+    // Call between beginUI() and endUI() to draw 2D elements.
+    // These are drawn on top of 3D scene (no depth test, alpha blend).
+    VkPipeline getUIPipeline() const { return uiPipeline_; }
+    VkPipelineLayout getUIPipelineLayout() const { return uiPipelineLayout_; }
+
 private:
     // Init steps
     void initVulkan();
@@ -137,6 +161,7 @@ private:
     void createSyncObjects();
     void createDescriptorSetLayout();
     void createGraphicsPipeline();
+    void createUIPipeline();
     void createDepthResources();
     void createDescriptorPool();
     void createDescriptorSets();
@@ -188,9 +213,13 @@ private:
     AllocatedImage depthImage_;
     VkFormat depthFormat_;
 
-    // Pipeline
+    // Pipeline (3D world)
     VkPipelineLayout pipelineLayout_ = VK_NULL_HANDLE;
     VkPipeline graphicsPipeline_ = VK_NULL_HANDLE;
+
+    // Pipeline (2D UI overlay)
+    VkPipelineLayout uiPipelineLayout_ = VK_NULL_HANDLE;
+    VkPipeline uiPipeline_ = VK_NULL_HANDLE;
 
     // Descriptors
     VkDescriptorSetLayout descriptorSetLayout_ = VK_NULL_HANDLE;

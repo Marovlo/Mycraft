@@ -3,23 +3,22 @@
 
 void Crosshair::update(VulkanEngine& engine, const glm::vec3& eyePos,
                        const glm::vec3& forward, const glm::vec3& right, const glm::vec3& up) {
-    // Destroy old mesh
     if (mesh_.indexCount > 0) {
         engine.destroyMesh(mesh_);
         mesh_ = {};
     }
 
-    // Place a tiny white cross 0.5m in front of the camera
-    float dist = 0.5f;
-    float halfLen = 0.004f;
-    float halfThk = 0.0006f;
+    // Place crosshair very close to the near plane (0.11m, near plane is 0.1m)
+    // so it's almost never occluded by world geometry
+    float dist = 0.11f;
+    float halfLen = 0.0012f;   // crosshair arm length
+    float halfThk = 0.00015f;  // crosshair arm thickness
 
     glm::vec3 c = eyePos + forward * dist;
-    glm::vec3 n = -forward;  // face toward camera
-    glm::vec2 uv(0.0f, 0.0f);  // sample top-left pixel of atlas
-
-    auto r = right;
-    auto u = up;
+    // Normal facing camera — shader will compute lighting but at this distance
+    // the normal direction makes it fully lit (ambient 0.4 + diffuse)
+    glm::vec3 n = glm::vec3(0.0f, 1.0f, 0.0f);  // top-face normal = brightest
+    glm::vec2 uv(0.0f, 0.0f);  // top-left pixel of atlas
 
     std::vector<Vertex> verts;
     std::vector<uint32_t> idx;
@@ -34,10 +33,12 @@ void Crosshair::update(VulkanEngine& engine, const glm::vec3& eyePos,
         idx.push_back(b); idx.push_back(b+2); idx.push_back(b+3);
     };
 
+    glm::vec3 r = right;
+    glm::vec3 u = up;
+
     // Horizontal bar
     quad(c - r*halfLen - u*halfThk, c - r*halfLen + u*halfThk,
          c + r*halfLen + u*halfThk, c + r*halfLen - u*halfThk);
-
     // Vertical bar
     quad(c - r*halfThk - u*halfLen, c - r*halfThk + u*halfLen,
          c + r*halfThk + u*halfLen, c + r*halfThk - u*halfLen);

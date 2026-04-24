@@ -28,6 +28,24 @@ std::array<VkVertexInputAttributeDescription, 3> Vertex::getAttributeDescription
     return attrs;
 }
 
+// ========== UIVertex ==========
+
+VkVertexInputBindingDescription UIVertex::getBindingDescription() {
+    VkVertexInputBindingDescription desc{};
+    desc.binding = 0;
+    desc.stride = sizeof(UIVertex);
+    desc.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+    return desc;
+}
+
+std::array<VkVertexInputAttributeDescription, 3> UIVertex::getAttributeDescriptions() {
+    std::array<VkVertexInputAttributeDescription, 3> attrs{};
+    attrs[0] = {0, 0, VK_FORMAT_R32G32_SFLOAT, offsetof(UIVertex, position)};
+    attrs[1] = {1, 0, VK_FORMAT_R32G32_SFLOAT, offsetof(UIVertex, texCoord)};
+    attrs[2] = {2, 0, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(UIVertex, color)};
+    return attrs;
+}
+
 // ========== Init ==========
 
 bool VulkanEngine::init(int width, int height, const char* title) {
@@ -60,6 +78,7 @@ bool VulkanEngine::init(int width, int height, const char* title) {
     createSyncObjects();
     createDescriptorSetLayout();
     createGraphicsPipeline();
+    createUIPipeline();
     createDescriptorPool();
     createUniformBuffers();
     createDescriptorSets();
@@ -438,6 +457,115 @@ void VulkanEngine::createGraphicsPipeline() {
     });
 }
 
+void VulkanEngine::createUIPipeline() {
+    auto vertModule = createShaderModule(std::string(SHADER_DIR) + "/ui.vert.spv");
+    auto fragModule = createShaderModule(std::string(SHADER_DIR) + "/ui.frag.spv");
+
+    VkPipelineShaderStageCreateInfo vertStage{VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO};
+    vertStage.stage = VK_SHADER_STAGE_VERTEX_BIT;
+    vertStage.module = vertModule;
+    vertStage.pName = "main";
+
+    VkPipelineShaderStageCreateInfo fragStage{VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO};
+    fragStage.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+    fragStage.module = fragModule;
+    fragStage.pName = "main";
+
+    VkPipelineShaderStageCreateInfo stages[] = {vertStage, fragStage};
+
+    auto bindingDesc = UIVertex::getBindingDescription();
+    auto attrDescs = UIVertex::getAttributeDescriptions();
+
+    VkPipelineVertexInputStateCreateInfo vertexInput{VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
+    vertexInput.vertexBindingDescriptionCount = 1;
+    vertexInput.pVertexBindingDescriptions = &bindingDesc;
+    vertexInput.vertexAttributeDescriptionCount = static_cast<uint32_t>(attrDescs.size());
+    vertexInput.pVertexAttributeDescriptions = attrDescs.data();
+
+    VkPipelineInputAssemblyStateCreateInfo inputAssembly{VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
+    inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+
+    VkPipelineViewportStateCreateInfo viewportState{VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO};
+    viewportState.viewportCount = 1;
+    viewportState.scissorCount = 1;
+
+    VkPipelineRasterizationStateCreateInfo raster{VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO};
+    raster.polygonMode = VK_POLYGON_MODE_FILL;
+    raster.lineWidth = 1.0f;
+    raster.cullMode = VK_CULL_MODE_NONE;  // UI quads are double-sided
+    raster.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+
+    VkPipelineMultisampleStateCreateInfo multisampling{VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO};
+    multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+
+    // No depth test for UI
+    VkPipelineDepthStencilStateCreateInfo depthStencil{VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO};
+    depthStencil.depthTestEnable = VK_FALSE;
+    depthStencil.depthWriteEnable = VK_FALSE;
+
+    // Alpha blending
+    VkPipelineColorBlendAttachmentState colorBlendAttachment{};
+    colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+                                           VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+    colorBlendAttachment.blendEnable = VK_TRUE;
+    colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+    colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    colorBlendAttachment.colorBlendOp = VK_BLEND_OP_ADD;
+    colorBlendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+    colorBlendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+    colorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
+
+    VkPipelineColorBlendStateCreateInfo colorBlend{VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
+    colorBlend.attachmentCount = 1;
+    colorBlend.pAttachments = &colorBlendAttachment;
+
+    std::array<VkDynamicState, 2> dynamicStates = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
+    VkPipelineDynamicStateCreateInfo dynamicState{VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO};
+    dynamicState.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
+    dynamicState.pDynamicStates = dynamicStates.data();
+
+    // Push constant for screen size
+    VkPushConstantRange pushConstRange{};
+    pushConstRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    pushConstRange.offset = 0;
+    pushConstRange.size = sizeof(UIPushConstants);
+
+    VkPipelineLayoutCreateInfo layoutInfo{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
+    layoutInfo.setLayoutCount = 1;
+    layoutInfo.pSetLayouts = &descriptorSetLayout_;  // reuse same descriptor layout (UBO + sampler)
+    layoutInfo.pushConstantRangeCount = 1;
+    layoutInfo.pPushConstantRanges = &pushConstRange;
+
+    vkCreatePipelineLayout(device_, &layoutInfo, nullptr, &uiPipelineLayout_);
+
+    VkGraphicsPipelineCreateInfo pipelineInfo{VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
+    pipelineInfo.stageCount = 2;
+    pipelineInfo.pStages = stages;
+    pipelineInfo.pVertexInputState = &vertexInput;
+    pipelineInfo.pInputAssemblyState = &inputAssembly;
+    pipelineInfo.pViewportState = &viewportState;
+    pipelineInfo.pRasterizationState = &raster;
+    pipelineInfo.pMultisampleState = &multisampling;
+    pipelineInfo.pDepthStencilState = &depthStencil;
+    pipelineInfo.pColorBlendState = &colorBlend;
+    pipelineInfo.pDynamicState = &dynamicState;
+    pipelineInfo.layout = uiPipelineLayout_;
+    pipelineInfo.renderPass = renderPass_;
+    pipelineInfo.subpass = 0;
+
+    if (vkCreateGraphicsPipelines(device_, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &uiPipeline_) != VK_SUCCESS) {
+        throw std::runtime_error("Failed to create UI pipeline");
+    }
+
+    vkDestroyShaderModule(device_, vertModule, nullptr);
+    vkDestroyShaderModule(device_, fragModule, nullptr);
+
+    mainDeletionQueue_.push([this]() {
+        vkDestroyPipeline(device_, uiPipeline_, nullptr);
+        vkDestroyPipelineLayout(device_, uiPipelineLayout_, nullptr);
+    });
+}
+
 void VulkanEngine::createDescriptorPool() {
     std::array<VkDescriptorPoolSize, 2> poolSizes{};
     poolSizes[0] = {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, MAX_FRAMES_IN_FLIGHT};
@@ -706,6 +834,46 @@ void VulkanEngine::destroyMesh(Mesh& mesh) {
         mesh.indexBuffer = {};
     }
     mesh.indexCount = 0;
+}
+
+Mesh VulkanEngine::uploadUIMesh(const std::vector<UIVertex>& vertices, const std::vector<uint32_t>& indices) {
+    Mesh mesh;
+    mesh.indexCount = static_cast<uint32_t>(indices.size());
+
+    VkDeviceSize vbSize = sizeof(UIVertex) * vertices.size();
+    VkDeviceSize ibSize = sizeof(uint32_t) * indices.size();
+    VkDeviceSize totalSize = vbSize + ibSize;
+
+    auto staging = createBuffer(totalSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_ONLY);
+
+    void* data;
+    vmaMapMemory(allocator_, staging.allocation, &data);
+    memcpy(data, vertices.data(), vbSize);
+    memcpy(static_cast<char*>(data) + vbSize, indices.data(), ibSize);
+    vmaUnmapMemory(allocator_, staging.allocation);
+
+    mesh.vertexBuffer = createBuffer(vbSize,
+        VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+        VMA_MEMORY_USAGE_GPU_ONLY);
+    mesh.indexBuffer = createBuffer(ibSize,
+        VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+        VMA_MEMORY_USAGE_GPU_ONLY);
+
+    auto cmd = beginSingleTimeCommands();
+    VkBufferCopy vbCopy{};
+    vbCopy.srcOffset = 0;
+    vbCopy.size = vbSize;
+    vkCmdCopyBuffer(cmd, staging.buffer, mesh.vertexBuffer.buffer, 1, &vbCopy);
+
+    VkBufferCopy ibCopy{};
+    ibCopy.srcOffset = vbSize;
+    ibCopy.size = ibSize;
+    vkCmdCopyBuffer(cmd, staging.buffer, mesh.indexBuffer.buffer, 1, &ibCopy);
+    endSingleTimeCommands(cmd);
+
+    vmaDestroyBuffer(allocator_, staging.buffer, staging.allocation);
+
+    return mesh;
 }
 
 // ========== Texture ==========
