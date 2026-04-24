@@ -46,14 +46,16 @@ void Game::init() {
     // Init HUD
     hud_.init(&uiRenderer_, &iconAtlas_, &engine_);
 
-    // Give player some starting items in hotbar
-    inventory_.getSlot(0) = {1, 64, 0};   // Grass block
+    // Give player starting items (ItemId: 1=Grass, 2=Dirt, 3=Cobble, 4=Sand, 5=OakLog, 6=Leaves, 7=Planks, 8=Bedrock, 9=Gravel)
+    inventory_.getSlot(0) = {1, 64, 0};   // Grass
     inventory_.getSlot(1) = {2, 64, 0};   // Dirt
-    inventory_.getSlot(2) = {3, 64, 0};   // Cobblestone
+    inventory_.getSlot(2) = {10, 64, 0};  // Stone
     inventory_.getSlot(3) = {4, 64, 0};   // Sand
     inventory_.getSlot(4) = {5, 64, 0};   // Oak Log
     inventory_.getSlot(5) = {7, 64, 0};   // Oak Planks
-    inventory_.getSlot(6) = {10, 64, 0};  // Stone
+    inventory_.getSlot(6) = {3, 64, 0};   // Cobblestone
+    inventory_.getSlot(7) = {9, 64, 0};   // Gravel
+    inventory_.getSlot(8) = {6, 64, 0};   // Oak Leaves
 
     engine_.onUpdate = [this](float) { update(0.0f); };
     engine_.onRender = [this](VkCommandBuffer cmd, uint32_t) { render(cmd); };
