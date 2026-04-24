@@ -76,9 +76,10 @@ void Game::update(float) {
     double now = glfwGetTime();
     int ticks = tickClock_.advance(now);
 
-    // Input must be updated once per frame (synced with glfwPollEvents),
-    // NOT per tick — otherwise key press events get lost between ticks.
     input_.update();
+
+    // Per-frame input: ESC, mouse look (must respond every frame)
+    handleFrameInput();
 
     for (int i = 0; i < ticks; i++) {
         gameTick();
@@ -86,10 +87,8 @@ void Game::update(float) {
 
     input_.postUpdate();
 
-    // Per-frame work (visual, not gameplay)
     buildMeshes();
 
-    // Update UBO for rendering
     float aspect = static_cast<float>(engine_.getWindowWidth()) /
                    static_cast<float>(engine_.getWindowHeight());
 
@@ -102,7 +101,7 @@ void Game::update(float) {
     float fogStart = static_cast<float>((RENDER_DISTANCE - 2) * CHUNK_SIZE);
     float fogEnd   = static_cast<float>(RENDER_DISTANCE * CHUNK_SIZE);
     ubo.fogRange = glm::vec2(fogStart, fogEnd);
-    // Queue UI draws for this frame
+
     float sw = static_cast<float>(engine_.getWindowWidth());
     float sh = static_cast<float>(engine_.getWindowHeight());
     uiRenderer_.drawCrosshair(sw, sh, 30.0f, 3.0f);
@@ -113,8 +112,7 @@ void Game::update(float) {
 void Game::gameTick() {
     const float dt = static_cast<float>(TickClock::TICK_DURATION);
 
-    handleInput();
-
+    handleTickInput();
     Physics::update(player_, world_, dt);
 
     playerChunkX_ = blockToChunk(static_cast<int>(std::floor(player_.position.x)));
@@ -124,19 +122,28 @@ void Game::gameTick() {
     unloadDistantChunks();
 }
 
-void Game::handleInput() {
+void Game::handleFrameInput() {
+    // ESC: unlock cursor, or quit if already unlocked
     if (input_.isKeyPressed(GLFW_KEY_ESCAPE)) {
         if (input_.isCursorLocked()) {
-            input_.toggleCursorLock();
+            input_.setCursorLocked(false);
         } else {
             glfwSetWindowShouldClose(engine_.getWindow(), GLFW_TRUE);
         }
     }
 
+    // Click window to re-lock cursor
+    if (!input_.isCursorLocked() && input_.isMouseButtonPressed(GLFW_MOUSE_BUTTON_LEFT)) {
+        input_.setCursorLocked(true);
+    }
+
+    // Mouse look (every frame for smoothness)
     if (input_.isCursorLocked()) {
         player_.look(input_.getMouseDeltaX(), input_.getMouseDeltaY());
     }
+}
 
+void Game::handleTickInput() {
     glm::vec3 move(0.0f);
     if (input_.isKeyDown(GLFW_KEY_W)) move += player_.getFlatForward();
     if (input_.isKeyDown(GLFW_KEY_S)) move -= player_.getFlatForward();
@@ -238,7 +245,7 @@ void Game::buildMeshes() {
         }
         chunk.clearMeshDirty();
 
-        if (++meshBuilds >= 4) break;
+        if (++meshBuilds >= 2) break; // Limit per frame to avoid GPU stalls
     }
 }
 

@@ -27,7 +27,8 @@ private:
     void gameTick();              // Fixed 20 TPS game logic
     void render(VkCommandBuffer cmd);
 
-    void handleInput();
+    void handleFrameInput();      // Per-frame: ESC, mouse look
+    void handleTickInput();       // Per-tick: movement, block interaction
     void updateChunks();
     void buildMeshes();
     void unloadDistantChunks();
