@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <string>
+#include <iostream>
 #include <GLFW/glfw3.h>
 #include "core/item.h"
 
@@ -225,6 +226,32 @@ void Game::handleFrameInput() {
     // Click window to re-lock cursor
     if (!input_.isCursorLocked() && input_.isMouseButtonPressed(GLFW_MOUSE_BUTTON_LEFT)) {
         input_.setCursorLocked(true);
+    }
+
+    // F2: Screenshot
+    if (input_.isKeyPressed(GLFW_KEY_F2)) {
+        // Save to project root's debug_output/
+        std::string dir = std::string(ASSET_DIR) + "/../debug_output";
+        std::string path = dir + "/screenshot_" + std::to_string(tickClock_.getTotalTicks()) + ".png";
+        engine_.requestScreenshot(path);
+    }
+
+    // F4: Debug state log
+    if (input_.isKeyPressed(GLFW_KEY_F4)) {
+        auto& reg = BlockRegistry::instance();
+        std::cout << "\n=== DEBUG STATE (tick " << tickClock_.getTotalTicks() << ") ===\n";
+        std::cout << "Player pos: " << player_.position.x << ", " << player_.position.y << ", " << player_.position.z << "\n";
+        std::cout << "Player yaw/pitch: " << player_.yaw << " / " << player_.pitch << "\n";
+        std::cout << "Chunk pos: " << playerChunkX_ << ", " << playerChunkZ_ << "\n";
+        std::cout << "Loaded chunks: " << world_.chunks().size() << "\n";
+        std::cout << "Selected slot: " << inventory_.getSelectedSlot();
+        const auto& held = inventory_.getHeldItem();
+        if (!held.isEmpty()) {
+            std::cout << " -> ItemId " << held.id << " x" << held.count
+                      << " (" << ItemRegistry::instance().get(held.id).displayName << ")";
+        }
+        std::cout << "\nWindow: " << engine_.getWindowWidth() << "x" << engine_.getWindowHeight() << "\n";
+        std::cout << "=== END ===\n\n";
     }
 
     // Mouse look (every frame for smoothness)

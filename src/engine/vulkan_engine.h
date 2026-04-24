@@ -151,6 +151,9 @@ public:
     void updateTextureDescriptor(VkImageView imageView, VkSampler sampler);
     VkSampler getDefaultSampler() const { return defaultSampler_; }
 
+    // Screenshot: save current framebuffer to PNG file
+    void requestScreenshot(const std::string& filepath);
+
     // --- 2D UI Rendering ---
     // Call between beginUI() and endUI() to draw 2D elements.
     // These are drawn on top of 3D scene (no depth test, alpha blend).
@@ -241,4 +244,8 @@ private:
 
     // Cleanup
     DeletionQueue mainDeletionQueue_;
+
+    // Screenshot
+    std::string pendingScreenshotPath_;
+    void executeScreenshot(uint32_t imageIndex);
 };

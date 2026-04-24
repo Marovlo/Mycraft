@@ -6,3 +6,4 @@ build/
 *.spv
 .DS_Store
 compile_commands.json
+debug_output/

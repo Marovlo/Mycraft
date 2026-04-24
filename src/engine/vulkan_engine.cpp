@@ -10,6 +10,8 @@
 #define VMA_IMPLEMENTATION
 #include <vk_mem_alloc.h>
 
+#include <stb_image_write.h>
+
 // ========== Vertex ==========
 
 VkVertexInputBindingDescription Vertex::getBindingDescription() {
@@ -1128,7 +1130,83 @@ void VulkanEngine::drawFrame() {
         recreateSwapchain();
     }
 
+    // Screenshot if requested (after present, image is in PRESENT_SRC layout)
+    if (!pendingScreenshotPath_.empty()) {
+        executeScreenshot(imageIndex);
+    }
+
     currentFrame_ = (currentFrame_ + 1) % MAX_FRAMES_IN_FLIGHT;
+}
+
+void VulkanEngine::requestScreenshot(const std::string& filepath) {
+    pendingScreenshotPath_ = filepath;
+}
+
+void VulkanEngine::executeScreenshot(uint32_t imageIndex) {
+    if (pendingScreenshotPath_.empty()) return;
+
+    vkDeviceWaitIdle(device_);
+
+    VkDeviceSize imageSize = swapchainExtent_.width * swapchainExtent_.height * 4;
+    auto stagingBuf = createBuffer(imageSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_CPU_ONLY);
+
+    auto cmd = beginSingleTimeCommands();
+
+    // Transition swapchain image to transfer src
+    VkImageMemoryBarrier barrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+    barrier.oldLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.image = swapchainImages_[imageIndex];
+    barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+    barrier.srcAccessMask = VK_ACCESS_MEMORY_READ_BIT;
+    barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                         0, 0, nullptr, 0, nullptr, 1, &barrier);
+
+    // Copy image to buffer
+    VkBufferImageCopy region{};
+    region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+    region.imageExtent = {swapchainExtent_.width, swapchainExtent_.height, 1};
+    vkCmdCopyImageToBuffer(cmd, swapchainImages_[imageIndex],
+                            VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                            stagingBuf.buffer, 1, &region);
+
+    // Transition back
+    barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    barrier.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+    barrier.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                         0, 0, nullptr, 0, nullptr, 1, &barrier);
+
+    endSingleTimeCommands(cmd);
+
+    // Read pixels and write PNG
+    void* data;
+    vmaMapMemory(allocator_, stagingBuf.allocation, &data);
+
+    // Swapchain format is B8G8R8A8_SRGB — need to swizzle to RGBA for PNG
+    uint32_t w = swapchainExtent_.width;
+    uint32_t h = swapchainExtent_.height;
+    std::vector<uint8_t> rgba(w * h * 4);
+    auto* src = static_cast<uint8_t*>(data);
+    for (uint32_t i = 0; i < w * h; i++) {
+        rgba[i*4+0] = src[i*4+2];  // R <- B
+        rgba[i*4+1] = src[i*4+1];  // G
+        rgba[i*4+2] = src[i*4+0];  // B <- R
+        rgba[i*4+3] = 255;
+    }
+
+    vmaUnmapMemory(allocator_, stagingBuf.allocation);
+    vmaDestroyBuffer(allocator_, stagingBuf.buffer, stagingBuf.allocation);
+
+    // Write PNG using stb_image_write
+    stbi_write_png(pendingScreenshotPath_.c_str(), w, h, 4, rgba.data(), w * 4);
+
+    std::cout << "Screenshot saved: " << pendingScreenshotPath_ << " (" << w << "x" << h << ")\n";
+    pendingScreenshotPath_.clear();
 }
 
 // ========== Run ==========
