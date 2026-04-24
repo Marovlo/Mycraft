@@ -51,8 +51,12 @@ private:
     int playerChunkX_ = 0;
     int playerChunkZ_ = 0;
 
-    // Render interpolation: previous tick position for smooth visuals
+    // Render interpolation
     glm::vec3 prevPlayerPos_{0.0f, 100.0f, 0.0f};
+
+    // Target block highlight
+    Mesh targetHighlight_;
+    bool hasTarget_ = false;
 
     // Reusable buffer for unloadDistantChunks
     std::vector<ChunkKey> chunksToRemove_;

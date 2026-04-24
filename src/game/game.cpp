@@ -16,6 +16,9 @@ Game::~Game() {
             engine_.destroyMesh(chunk.getMesh());
         }
     }
+    if (targetHighlight_.indexCount > 0) {
+        engine_.destroyMesh(targetHighlight_);
+    }
     uiRenderer_.destroy();
     textureAtlas_.destroy(engine_);
     engine_.cleanup();
@@ -114,6 +117,67 @@ void Game::update(float) {
     uiRenderer_.drawCrosshair(sw, sh, 30.0f, 3.0f);
 
     engine_.updateUniformBuffer(ubo);
+
+    // Build target block highlight
+    if (targetHighlight_.indexCount > 0) {
+        engine_.destroyMesh(targetHighlight_);
+        targetHighlight_ = {};
+    }
+    hasTarget_ = false;
+
+    if (input_.isCursorLocked()) {
+        RayHit hit = raycastWorld(world_, player_.getEyePosition(),
+                                  player_.getForward(), MAX_REACH);
+        if (hit.hit) {
+            hasTarget_ = true;
+            // Build outline: 6 thin faces slightly outside the block (wireframe effect)
+            float e = 0.002f;  // expansion to prevent z-fighting
+            float bx = static_cast<float>(hit.blockX);
+            float by = static_cast<float>(hit.blockY);
+            float bz = static_cast<float>(hit.blockZ);
+
+            std::vector<Vertex> verts;
+            std::vector<uint32_t> idx;
+            glm::vec3 n(0, 1, 0);
+            glm::vec2 uv(0, 0);  // sample dark pixel
+
+            auto addLine = [&](glm::vec3 a, glm::vec3 b, glm::vec3 offset) {
+                uint32_t base = static_cast<uint32_t>(verts.size());
+                verts.push_back({a - offset, n, uv});
+                verts.push_back({a + offset, n, uv});
+                verts.push_back({b + offset, n, uv});
+                verts.push_back({b - offset, n, uv});
+                idx.push_back(base); idx.push_back(base+1); idx.push_back(base+2);
+                idx.push_back(base); idx.push_back(base+2); idx.push_back(base+3);
+            };
+
+            float t = 0.01f; // line thickness
+            // 12 edges of the cube
+            glm::vec3 corners[8] = {
+                {bx-e, by-e, bz-e}, {bx+1+e, by-e, bz-e},
+                {bx+1+e, by-e, bz+1+e}, {bx-e, by-e, bz+1+e},
+                {bx-e, by+1+e, bz-e}, {bx+1+e, by+1+e, bz-e},
+                {bx+1+e, by+1+e, bz+1+e}, {bx-e, by+1+e, bz+1+e},
+            };
+            // Bottom edges
+            addLine(corners[0], corners[1], glm::vec3(0, t, 0));
+            addLine(corners[1], corners[2], glm::vec3(0, t, 0));
+            addLine(corners[2], corners[3], glm::vec3(0, t, 0));
+            addLine(corners[3], corners[0], glm::vec3(0, t, 0));
+            // Top edges
+            addLine(corners[4], corners[5], glm::vec3(0, t, 0));
+            addLine(corners[5], corners[6], glm::vec3(0, t, 0));
+            addLine(corners[6], corners[7], glm::vec3(0, t, 0));
+            addLine(corners[7], corners[4], glm::vec3(0, t, 0));
+            // Vertical edges
+            addLine(corners[0], corners[4], glm::vec3(t, 0, 0));
+            addLine(corners[1], corners[5], glm::vec3(t, 0, 0));
+            addLine(corners[2], corners[6], glm::vec3(t, 0, 0));
+            addLine(corners[3], corners[7], glm::vec3(t, 0, 0));
+
+            targetHighlight_ = engine_.uploadMesh(verts, idx);
+        }
+    }
 }
 
 void Game::gameTick() {
@@ -151,9 +215,39 @@ void Game::handleFrameInput() {
     if (input_.isCursorLocked()) {
         player_.look(input_.getMouseDeltaX(), input_.getMouseDeltaY());
     }
+
+    // Block selection (1-9) — must be per-frame to not miss key presses
+    for (int i = 0; i < 9; i++) {
+        if (input_.isKeyPressed(GLFW_KEY_1 + i)) {
+            BlockId id = static_cast<BlockId>(i + 1);
+            if (id < BlockRegistry::instance().blockCount()) {
+                player_.selectedBlock = id;
+            }
+        }
+    }
+
+    // Block interaction — must be per-frame to not miss clicks
+    if (input_.isCursorLocked()) {
+        if (input_.isMouseButtonPressed(GLFW_MOUSE_BUTTON_LEFT)) {
+            RayHit hit = raycastWorld(world_, player_.getEyePosition(),
+                                      player_.getForward(), MAX_REACH);
+            if (hit.hit) {
+                world_.setBlock(hit.blockX, hit.blockY, hit.blockZ, Block::Air);
+            }
+        }
+
+        if (input_.isMouseButtonPressed(GLFW_MOUSE_BUTTON_RIGHT)) {
+            RayHit hit = raycastWorld(world_, player_.getEyePosition(),
+                                      player_.getForward(), MAX_REACH);
+            if (hit.hit) {
+                world_.setBlock(hit.prevX, hit.prevY, hit.prevZ, player_.selectedBlock);
+            }
+        }
+    }
 }
 
 void Game::handleTickInput() {
+    // Only continuous-state inputs here (held keys)
     glm::vec3 move(0.0f);
     if (input_.isKeyDown(GLFW_KEY_W)) move += player_.getFlatForward();
     if (input_.isKeyDown(GLFW_KEY_S)) move -= player_.getFlatForward();
@@ -171,33 +265,6 @@ void Game::handleTickInput() {
     if (input_.isKeyDown(GLFW_KEY_SPACE) && player_.onGround) {
         player_.velocity.y = JUMP_FORCE;
         player_.onGround = false;
-    }
-
-    for (int i = 0; i < 9; i++) {
-        if (input_.isKeyPressed(GLFW_KEY_1 + i)) {
-            BlockId id = static_cast<BlockId>(i + 1);
-            if (id < BlockRegistry::instance().blockCount()) {
-                player_.selectedBlock = id;
-            }
-        }
-    }
-
-    if (input_.isCursorLocked()) {
-        if (input_.isMouseButtonPressed(GLFW_MOUSE_BUTTON_LEFT)) {
-            RayHit hit = raycastWorld(world_, player_.getEyePosition(),
-                                      player_.getForward(), MAX_REACH);
-            if (hit.hit) {
-                world_.setBlock(hit.blockX, hit.blockY, hit.blockZ, Block::Air);
-            }
-        }
-
-        if (input_.isMouseButtonPressed(GLFW_MOUSE_BUTTON_RIGHT)) {
-            RayHit hit = raycastWorld(world_, player_.getEyePosition(),
-                                      player_.getForward(), MAX_REACH);
-            if (hit.hit) {
-                world_.setBlock(hit.prevX, hit.prevY, hit.prevZ, player_.selectedBlock);
-            }
-        }
     }
 }
 
@@ -289,6 +356,15 @@ void Game::render(VkCommandBuffer cmd) {
         vkCmdBindVertexBuffers(cmd, 0, 1, vb, offsets);
         vkCmdBindIndexBuffer(cmd, mesh.indexBuffer.buffer, 0, VK_INDEX_TYPE_UINT32);
         vkCmdDrawIndexed(cmd, mesh.indexCount, 1, 0, 0, 0);
+    }
+
+    // Draw target block highlight
+    if (hasTarget_ && targetHighlight_.indexCount > 0) {
+        VkBuffer vb[] = {targetHighlight_.vertexBuffer.buffer};
+        VkDeviceSize offsets[] = {0};
+        vkCmdBindVertexBuffers(cmd, 0, 1, vb, offsets);
+        vkCmdBindIndexBuffer(cmd, targetHighlight_.indexBuffer.buffer, 0, VK_INDEX_TYPE_UINT32);
+        vkCmdDrawIndexed(cmd, targetHighlight_.indexCount, 1, 0, 0, 0);
     }
 
     // Draw 2D UI on top
