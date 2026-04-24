@@ -73,13 +73,18 @@ void Game::loadTextureAtlas() {
 }
 
 void Game::update(float) {
-    // Advance tick clock — returns how many fixed ticks to run this frame
     double now = glfwGetTime();
     int ticks = tickClock_.advance(now);
+
+    // Input must be updated once per frame (synced with glfwPollEvents),
+    // NOT per tick — otherwise key press events get lost between ticks.
+    input_.update();
 
     for (int i = 0; i < ticks; i++) {
         gameTick();
     }
+
+    input_.postUpdate();
 
     // Per-frame work (visual, not gameplay)
     buildMeshes();
@@ -108,9 +113,7 @@ void Game::update(float) {
 void Game::gameTick() {
     const float dt = static_cast<float>(TickClock::TICK_DURATION);
 
-    input_.update();
     handleInput();
-    input_.postUpdate();
 
     Physics::update(player_, world_, dt);
 
