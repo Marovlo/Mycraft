@@ -34,93 +34,46 @@ void ItemIconAtlas::renderBlockIcon(uint8_t* iconPixels,
     const int S = ICON_SIZE;
     std::memset(iconPixels, 0, S * S * 4);
 
-    // Simple isometric block: divide icon into 3 regions
-    // Top diamond in upper portion, left face lower-left, right face lower-right
-    // All coordinates in [0, S) pixel space
+    // Simple pseudo-isometric: 3 rectangular regions
+    // Top face: upper 40% of icon (trapezoid approximated as rect, skewed texture)
+    // Front face: lower-left 60%
+    // Side face: lower-right 60%
+    //
+    // Layout:
+    //   +----------+
+    //   |   TOP    |  rows [1, topEnd)
+    //   +-----+----+
+    //   |FRONT|SIDE|  rows [topEnd, S-1)
+    //   +-----+----+
+    //       cx
 
-    float cx = S * 0.5f;       // center x
-    float topY = S * 0.15f;    // top of diamond
-    float midY = S * 0.45f;    // middle (widest point of diamond, top of side faces)
-    float botY = S * 0.95f;    // bottom of side faces
-    float halfW = S * 0.45f;   // half-width at widest point
+    int margin = 1;
+    int topEnd = static_cast<int>(S * 0.4f);
+    int cx = S / 2;
 
-    for (int py = 0; py < S; py++) {
-        for (int px = 0; px < S; px++) {
-            float x = px + 0.5f;
-            float y = py + 0.5f;
-
+    for (int py = margin; py < S - margin; py++) {
+        for (int px = margin; px < S - margin; px++) {
+            float u, v;
             glm::vec4 color(0, 0, 0, 0);
-            float u = 0, v = 0;
 
-            // Top face (diamond): from (cx, topY) widening to midY
-            if (y >= topY && y <= midY) {
-                float t = (y - topY) / (midY - topY);  // 0 at top, 1 at mid
-                float leftEdge = cx - halfW * t;
-                float rightEdge = cx + halfW * t;
-
-                if (x >= leftEdge && x <= rightEdge) {
-                    // Check which half (above or below center line of diamond)
-                    // Map to UV: u = horizontal position, v = vertical
-                    u = (x - leftEdge) / (rightEdge - leftEdge);
-                    v = t;
-                    color = sampleAtlas(atlasPixels, atlasWidth, topTile, blockAtlas, u, v);
-                    // Top face brightness = 1.0
-                }
-            }
-
-            // Below midY: check if in the diamond's lower half (still top face)
-            if (color.a == 0 && y > midY && y <= midY + (midY - topY)) {
-                float t = (y - midY) / (midY - topY);  // 0 at mid, 1 at bottom of diamond
-                float leftEdge = cx - halfW * (1.0f - t);
-                float rightEdge = cx + halfW * (1.0f - t);
-
-                if (x >= leftEdge && x <= rightEdge) {
-                    u = (x - leftEdge) / (rightEdge - leftEdge);
-                    v = 0.5f + t * 0.5f;
-                    color = sampleAtlas(atlasPixels, atlasWidth, topTile, blockAtlas, u, v);
-                }
-            }
-
-            // Left face: below diamond left half, from midY to botY
-            float diamondBotY = midY + (midY - topY);
-            if (color.a == 0 && y > midY && y <= botY && x < cx) {
-                // Left edge slopes inward from (cx-halfW, midY) to (cx-halfW, botY)
-                // Right edge is center line
-                float faceH = botY - midY;
-                float t = (y - midY) / faceH;  // 0 at top, 1 at bottom
-                float leftEdge = cx - halfW;
-                float rightEdge = cx;
-
-                // Top of left face narrows from the diamond
-                if (y <= diamondBotY) {
-                    float dt = (y - midY) / (diamondBotY - midY);
-                    rightEdge = cx - halfW * (1.0f - dt) * 0.0f + cx * 1.0f;
-                    // Actually keep it simple: just check x < cx
-                }
-
-                if (x >= leftEdge && x < rightEdge) {
-                    u = (x - leftEdge) / (rightEdge - leftEdge);
-                    v = t;
-                    color = sampleAtlas(atlasPixels, atlasWidth, frontTile, blockAtlas, u, v);
-                    color *= 0.7f;  // darken front face
-                    color.a = 1.0f;
-                }
-            }
-
-            // Right face: below diamond right half, from midY to botY
-            if (color.a == 0 && y > midY && y <= botY && x >= cx) {
-                float leftEdge = cx;
-                float rightEdge = cx + halfW;
-                float faceH = botY - midY;
-                float t = (y - midY) / faceH;
-
-                if (x >= leftEdge && x <= rightEdge) {
-                    u = (x - leftEdge) / (rightEdge - leftEdge);
-                    v = t;
-                    color = sampleAtlas(atlasPixels, atlasWidth, sideTile, blockAtlas, u, v);
-                    color *= 0.85f;  // medium brightness
-                    color.a = 1.0f;
-                }
+            if (py < topEnd) {
+                // Top face
+                u = static_cast<float>(px - margin) / (S - 2 * margin);
+                v = static_cast<float>(py - margin) / (topEnd - margin);
+                color = sampleAtlas(atlasPixels, atlasWidth, topTile, blockAtlas, u, v);
+                // Top = brightest
+            } else if (px < cx) {
+                // Front face (left half)
+                u = static_cast<float>(px - margin) / (cx - margin);
+                v = static_cast<float>(py - topEnd) / (S - margin - topEnd);
+                color = sampleAtlas(atlasPixels, atlasWidth, frontTile, blockAtlas, u, v);
+                color = glm::vec4(color.r * 0.7f, color.g * 0.7f, color.b * 0.7f, color.a);
+            } else {
+                // Side face (right half)
+                u = static_cast<float>(px - cx) / (S - margin - cx);
+                v = static_cast<float>(py - topEnd) / (S - margin - topEnd);
+                color = sampleAtlas(atlasPixels, atlasWidth, sideTile, blockAtlas, u, v);
+                color = glm::vec4(color.r * 0.85f, color.g * 0.85f, color.b * 0.85f, color.a);
             }
 
             if (color.a > 0.01f) {
@@ -158,7 +111,6 @@ bool ItemIconAtlas::build(VulkanEngine& engine, const TextureAtlas& blockAtlas,
 
         if (props.type == ItemType::Block && props.blockId > 0 && props.blockId < blockReg.blockCount()) {
             const auto& blockProps = blockReg.get(props.blockId);
-            // Use top, south (front), east (right side) faces
             renderBlockIcon(iconPixels.data(), blockAtlas, blockAtlasPixels, blockAtlasWidth,
                            blockProps.textures.top, blockProps.textures.south, blockProps.textures.east);
         } else {
