@@ -6,6 +6,7 @@
 #include <cmath>
 #include <string>
 #include <GLFW/glfw3.h>
+#include "core/item.h"
 
 Game::Game() = default;
 
@@ -15,12 +16,14 @@ Game::~Game() {
             engine_.destroyMesh(chunk.getMesh());
         }
     }
+    crosshair_.destroy(engine_);
     textureAtlas_.destroy(engine_);
     engine_.cleanup();
 }
 
 void Game::init() {
     BlockRegistry::instance().registerDefaults();
+    ItemRegistry::instance().registerDefaults();
 
     if (!engine_.init(1280, 720, "VoxelCraft")) {
         throw std::runtime_error("Failed to init engine");
@@ -93,6 +96,11 @@ void Game::update(float) {
     float fogStart = static_cast<float>((RENDER_DISTANCE - 2) * CHUNK_SIZE);
     float fogEnd   = static_cast<float>(RENDER_DISTANCE * CHUNK_SIZE);
     ubo.fogRange = glm::vec2(fogStart, fogEnd);
+    // Update crosshair position
+    crosshair_.update(engine_, player_.getEyePosition(),
+                      player_.getForward(), player_.getRight(),
+                      glm::vec3(0, 1, 0));
+
     engine_.updateUniformBuffer(ubo);
 }
 
@@ -257,4 +265,7 @@ void Game::render(VkCommandBuffer cmd) {
         vkCmdBindIndexBuffer(cmd, mesh.indexBuffer.buffer, 0, VK_INDEX_TYPE_UINT32);
         vkCmdDrawIndexed(cmd, mesh.indexCount, 1, 0, 0, 0);
     }
+
+    // Draw crosshair on top
+    crosshair_.render(cmd);
 }

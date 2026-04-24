@@ -7,6 +7,7 @@
 #include "world/terrain_generator.h"
 #include "renderer/mesh_builder.h"
 #include "renderer/texture_atlas.h"
+#include "renderer/crosshair.h"
 #include "player/player.h"
 #include "player/physics.h"
 #include "core/tick_clock.h"
@@ -40,6 +41,7 @@ private:
     std::unique_ptr<TerrainGenerator> terrainGen_;
     MeshBuilder meshBuilder_;
     TickClock tickClock_;
+    Crosshair crosshair_;
 
     // Texture atlas
     TextureAtlas textureAtlas_;
