@@ -19,8 +19,8 @@ Game::~Game() {
     if (targetHighlight_.indexCount > 0) {
         engine_.destroyMesh(targetHighlight_);
     }
+    blockModel_.destroy(engine_);
     uiRenderer_.destroy();
-    iconAtlas_.destroy(engine_);
     textureAtlas_.destroy(engine_);
     engine_.cleanup();
 }
@@ -38,15 +38,11 @@ void Game::init() {
 
     loadTextureAtlas();
     uiRenderer_.init(&engine_);
+    blockModel_.init(engine_, textureAtlas_);
 
-    // Build item icon atlas (3D isometric block thumbnails)
-    iconAtlas_.build(engine_, textureAtlas_,
-                     textureAtlas_.getCpuPixels(), textureAtlas_.getAtlasPixelSize());
+    hud_.init(&uiRenderer_, &blockModel_, &textureAtlas_, &engine_);
 
-    // Init HUD
-    hud_.init(&uiRenderer_, &iconAtlas_, &engine_);
-
-    // Give player starting items (ItemId: 1=Grass, 2=Dirt, 3=Cobble, 4=Sand, 5=OakLog, 6=Leaves, 7=Planks, 8=Bedrock, 9=Gravel)
+    // Starting items
     inventory_.getSlot(0) = {1, 64, 0};   // Grass
     inventory_.getSlot(1) = {2, 64, 0};   // Dirt
     inventory_.getSlot(2) = {10, 64, 0};  // Stone
@@ -131,10 +127,10 @@ void Game::update(float) {
     float fogEnd   = static_cast<float>(RENDER_DISTANCE * CHUNK_SIZE);
     ubo.fogRange = glm::vec2(fogStart, fogEnd);
 
-    // Queue HUD draws for this frame
+    // Queue HUD 2D backgrounds
     float sw = static_cast<float>(engine_.getWindowWidth());
     float sh = static_cast<float>(engine_.getWindowHeight());
-    hud_.draw(sw, sh, inventory_);
+    hud_.drawBackgrounds(sw, sh, inventory_);
 
     engine_.updateUniformBuffer(ubo);
 
@@ -400,10 +396,23 @@ void Game::render(VkCommandBuffer cmd) {
         vkCmdDrawIndexed(cmd, targetHighlight_.indexCount, 1, 0, 0, 0);
     }
 
-    // Draw 2D UI on top (uses icon atlas texture for item icons)
-    uiRenderer_.flushWithTexture(cmd, engine_.getWindowWidth(), engine_.getWindowHeight(),
-                                  iconAtlas_.getImage().imageView, engine_.getDefaultSampler());
+    // Draw 3D block icons in hotbar (reuses 3D pipeline with small viewports)
+    float sw = static_cast<float>(engine_.getWindowWidth());
+    float sh = static_cast<float>(engine_.getWindowHeight());
+    hud_.render3DIcons(cmd, sw, sh, inventory_, engine_.getWindowWidth(), engine_.getWindowHeight());
 
-    // Restore block atlas texture for next frame's 3D rendering
-    engine_.updateTextureDescriptor(textureAtlas_.getImage().imageView, engine_.getDefaultSampler());
+    // Restore full viewport and world UBO for next frame
+    VkViewport fullVp{};
+    fullVp.width = static_cast<float>(engine_.getWindowWidth());
+    fullVp.height = static_cast<float>(engine_.getWindowHeight());
+    fullVp.minDepth = 0.0f;
+    fullVp.maxDepth = 1.0f;
+    vkCmdSetViewport(cmd, 0, 1, &fullVp);
+
+    VkRect2D fullScissor{};
+    fullScissor.extent = {engine_.getWindowWidth(), engine_.getWindowHeight()};
+    vkCmdSetScissor(cmd, 0, 1, &fullScissor);
+
+    // Draw 2D UI overlay (crosshair, hotbar backgrounds)
+    uiRenderer_.flush(cmd, engine_.getWindowWidth(), engine_.getWindowHeight());
 }

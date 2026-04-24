@@ -1,25 +1,36 @@
 #pragma once
 
 #include "renderer/ui_renderer.h"
-#include "renderer/item_icon.h"
+#include "renderer/block_model.h"
+#include "renderer/texture_atlas.h"
 #include "player/inventory.h"
 
-// Draws the in-game HUD: hotbar, crosshair, and later health/hunger bars.
 class HUD {
 public:
-    void init(UIRenderer* ui, ItemIconAtlas* iconAtlas, VulkanEngine* engine);
+    void init(UIRenderer* ui, BlockModelRenderer* blockModel,
+              TextureAtlas* atlas, VulkanEngine* engine);
 
-    // Draw HUD elements. Call once per frame before UIRenderer::flush().
-    void draw(float screenW, float screenH, const Inventory& inventory);
+    // Draw HUD backgrounds (crosshair, hotbar slots). Call before render3D.
+    void drawBackgrounds(float screenW, float screenH, const Inventory& inventory);
+
+    // Render 3D block icons in hotbar slots. Call during 3D render pass.
+    void render3DIcons(VkCommandBuffer cmd, float screenW, float screenH,
+                       const Inventory& inventory,
+                       uint32_t fullW, uint32_t fullH);
 
 private:
     UIRenderer* ui_ = nullptr;
-    ItemIconAtlas* iconAtlas_ = nullptr;
+    BlockModelRenderer* blockModel_ = nullptr;
+    TextureAtlas* atlas_ = nullptr;
     VulkanEngine* engine_ = nullptr;
 
-    // Whether icon atlas is bound as the active texture this frame
-    bool iconsBound_ = false;
+    // Hotbar layout constants
+    static constexpr float SLOT_SIZE = 64.0f;
+    static constexpr float GAP = 4.0f;
+    static constexpr float BORDER = 1.5f;
+    static constexpr float BOTTOM_MARGIN = 12.0f;
+    static constexpr float ICON_PAD = 6.0f;
 
-    void drawHotbar(float screenW, float screenH, const Inventory& inventory);
-    void drawCrosshair(float screenW, float screenH);
+    float getHotbarStartX(float screenW) const;
+    float getHotbarStartY(float screenH) const;
 };

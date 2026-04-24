@@ -1,72 +1,67 @@
 #include "hud.h"
 #include "core/item.h"
 
-void HUD::init(UIRenderer* ui, ItemIconAtlas* iconAtlas, VulkanEngine* engine) {
+void HUD::init(UIRenderer* ui, BlockModelRenderer* blockModel,
+               TextureAtlas* atlas, VulkanEngine* engine) {
     ui_ = ui;
-    iconAtlas_ = iconAtlas;
+    blockModel_ = blockModel;
+    atlas_ = atlas;
     engine_ = engine;
 }
 
-void HUD::draw(float screenW, float screenH, const Inventory& inventory) {
-    drawCrosshair(screenW, screenH);
-    drawHotbar(screenW, screenH, inventory);
+float HUD::getHotbarStartX(float screenW) const {
+    float totalWidth = Inventory::HOTBAR_SIZE * SLOT_SIZE + (Inventory::HOTBAR_SIZE - 1) * GAP;
+    return (screenW - totalWidth) * 0.5f;
 }
 
-void HUD::drawCrosshair(float screenW, float screenH) {
+float HUD::getHotbarStartY(float screenH) const {
+    return screenH - SLOT_SIZE - BOTTOM_MARGIN;
+}
+
+void HUD::drawBackgrounds(float screenW, float screenH, const Inventory& inventory) {
+    // Crosshair
     ui_->drawCrosshair(screenW, screenH, 40.0f, 4.0f);
-}
 
-void HUD::drawHotbar(float screenW, float screenH, const Inventory& inventory) {
-    const float slotSize = 64.0f;
-    const float gap = 4.0f;
-    const float border = 1.5f;
-    const float totalWidth = Inventory::HOTBAR_SIZE * slotSize + (Inventory::HOTBAR_SIZE - 1) * gap;
-    const float startX = (screenW - totalWidth) * 0.5f;
-    const float startY = screenH - slotSize - 12.0f;
-
+    float startX = getHotbarStartX(screenW);
+    float startY = getHotbarStartY(screenH);
     int selected = inventory.getSelectedSlot();
 
     for (int i = 0; i < Inventory::HOTBAR_SIZE; i++) {
-        float x = startX + i * (slotSize + gap);
+        float x = startX + i * (SLOT_SIZE + GAP);
         float y = startY;
 
-        // Selection highlight: thin white border
+        // Selection border (thin white lines)
         if (i == selected) {
-            glm::vec4 selColor(1.0f, 1.0f, 1.0f, 1.0f);
-            // Top
-            ui_->drawRect(x - border, y - border, slotSize + border * 2, border, selColor);
-            // Bottom
-            ui_->drawRect(x - border, y + slotSize, slotSize + border * 2, border, selColor);
-            // Left
-            ui_->drawRect(x - border, y, border, slotSize, selColor);
-            // Right
-            ui_->drawRect(x + slotSize, y, border, slotSize, selColor);
+            glm::vec4 sel(1.0f, 1.0f, 1.0f, 1.0f);
+            ui_->drawRect(x - BORDER, y - BORDER, SLOT_SIZE + BORDER * 2, BORDER, sel);
+            ui_->drawRect(x - BORDER, y + SLOT_SIZE, SLOT_SIZE + BORDER * 2, BORDER, sel);
+            ui_->drawRect(x - BORDER, y, BORDER, SLOT_SIZE, sel);
+            ui_->drawRect(x + SLOT_SIZE, y, BORDER, SLOT_SIZE, sel);
         }
 
         // Slot background
-        glm::vec4 bgColor(0.15f, 0.15f, 0.15f, 0.75f);
-        ui_->drawRect(x, y, slotSize, slotSize, bgColor);
-
-        // Item icon
-        const auto& stack = inventory.getSlot(i);
-        if (!stack.isEmpty()) {
-            glm::vec4 uv = iconAtlas_->getIconUV(stack.id);
-            if (uv.z > uv.x) {
-                float iconPad = 4.0f;
-                ui_->drawTexturedRect(x + iconPad, y + iconPad,
-                                     slotSize - iconPad * 2, slotSize - iconPad * 2,
-                                     uv.x, uv.y, uv.z, uv.w);
-            }
-        }
+        ui_->drawRect(x, y, SLOT_SIZE, SLOT_SIZE, glm::vec4(0.15f, 0.15f, 0.15f, 0.75f));
     }
+}
 
-    // Show selected item name as a colored bar above hotbar
-    // (Proper text rendering comes in Phase 8, for now show a subtle indicator)
-    const auto& held = inventory.getHeldItem();
-    if (!held.isEmpty()) {
-        // Small colored indicator bar above the selected slot
-        float selX = startX + selected * (slotSize + gap);
-        float indicatorY = startY - 8.0f;
-        ui_->drawRect(selX, indicatorY, slotSize, 3.0f, glm::vec4(1.0f, 1.0f, 1.0f, 0.6f));
+void HUD::render3DIcons(VkCommandBuffer cmd, float screenW, float screenH,
+                         const Inventory& inventory,
+                         uint32_t fullW, uint32_t fullH) {
+    float startX = getHotbarStartX(screenW);
+    float startY = getHotbarStartY(screenH);
+
+    for (int i = 0; i < Inventory::HOTBAR_SIZE; i++) {
+        const auto& stack = inventory.getSlot(i);
+        if (stack.isEmpty()) continue;
+
+        const auto& itemProps = ItemRegistry::instance().get(stack.id);
+        if (itemProps.type != ItemType::Block || itemProps.blockId == 0) continue;
+
+        float x = startX + i * (SLOT_SIZE + GAP) + ICON_PAD;
+        float y = startY + ICON_PAD;
+        float iconSize = SLOT_SIZE - ICON_PAD * 2;
+
+        blockModel_->renderBlockIcon(cmd, *engine_, itemProps.blockId, *atlas_,
+                                      x, y, iconSize, fullW, fullH);
     }
 }
