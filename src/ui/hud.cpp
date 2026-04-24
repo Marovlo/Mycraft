@@ -47,21 +47,7 @@ void HUD::drawBackgrounds(float screenW, float screenH, const Inventory& invento
 void HUD::render3DIcons(VkCommandBuffer cmd, float screenW, float screenH,
                          const Inventory& inventory,
                          uint32_t fullW, uint32_t fullH) {
-    float startX = getHotbarStartX(screenW);
-    float startY = getHotbarStartY(screenH);
-
-    for (int i = 0; i < Inventory::HOTBAR_SIZE; i++) {
-        const auto& stack = inventory.getSlot(i);
-        if (stack.isEmpty()) continue;
-
-        const auto& itemProps = ItemRegistry::instance().get(stack.id);
-        if (itemProps.type != ItemType::Block || itemProps.blockId == 0) continue;
-
-        float x = startX + i * (SLOT_SIZE + GAP) + ICON_PAD;
-        float y = startY + ICON_PAD;
-        float iconSize = SLOT_SIZE - ICON_PAD * 2;
-
-        blockModel_->renderBlockIcon(cmd, *engine_, itemProps.blockId, *atlas_,
-                                      x, y, iconSize, fullW, fullH);
-    }
+    // Temporarily disabled — will implement with proper second UBO
+    // The single-UBO approach causes white screen because GPU reads
+    // the last written UBO value for ALL draw calls in the command buffer
 }
