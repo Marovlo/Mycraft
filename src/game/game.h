@@ -6,8 +6,10 @@
 #include "world/world.h"
 #include "world/terrain_generator.h"
 #include "renderer/mesh_builder.h"
+#include "renderer/texture_atlas.h"
 #include "player/player.h"
 #include "player/physics.h"
+#include "core/tick_clock.h"
 
 #include <memory>
 
@@ -21,13 +23,14 @@ public:
 
 private:
     void update(float dt);
+    void gameTick();              // Fixed 20 TPS game logic
     void render(VkCommandBuffer cmd);
 
-    void handleInput(float dt);
+    void handleInput();
     void updateChunks();
     void buildMeshes();
     void unloadDistantChunks();
-    void generateBlockTexture();
+    void loadTextureAtlas();
 
     // Systems
     VulkanEngine engine_;
@@ -36,15 +39,15 @@ private:
     Player player_;
     std::unique_ptr<TerrainGenerator> terrainGen_;
     MeshBuilder meshBuilder_;
+    TickClock tickClock_;
 
     // Texture atlas
-    AllocatedImage blockTextureAtlas_;
-    bool hasTextureAtlas_ = false;
+    TextureAtlas textureAtlas_;
 
-    // Cached per-frame player chunk position (avoid recomputing in every function)
+    // Cached per-frame player chunk position
     int playerChunkX_ = 0;
     int playerChunkZ_ = 0;
 
-    // Reusable buffer to avoid per-frame heap allocation in unloadDistantChunks
+    // Reusable buffer for unloadDistantChunks
     std::vector<ChunkKey> chunksToRemove_;
 };

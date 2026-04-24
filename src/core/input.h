@@ -28,6 +28,7 @@ public:
     double getMouseY() const { return mouseY_; }
     double getMouseDeltaX() const { return mouseDeltaX_; }
     double getMouseDeltaY() const { return mouseDeltaY_; }
+    double getScrollDelta() const { return scrollDelta_; }
 
     // Cursor lock
     void setCursorLocked(bool locked);
@@ -49,6 +50,7 @@ private:
     double mouseX_ = 0, mouseY_ = 0;
     double lastMouseX_ = 0, lastMouseY_ = 0;
     double mouseDeltaX_ = 0, mouseDeltaY_ = 0;
+    double scrollDelta_ = 0;
     bool firstMouse_ = true;
     bool cursorLocked_ = true;
 
@@ -56,4 +58,5 @@ private:
     static void keyCallback(GLFWwindow* w, int key, int scancode, int action, int mods);
     static void mouseButtonCallback(GLFWwindow* w, int button, int action, int mods);
     static void cursorPosCallback(GLFWwindow* w, double xpos, double ypos);
+    static void scrollCallback(GLFWwindow* w, double xoffset, double yoffset);
 };

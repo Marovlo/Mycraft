@@ -6,6 +6,7 @@ void InputManager::init(GLFWwindow* window) {
     glfwSetKeyCallback(window_, keyCallback);
     glfwSetMouseButtonCallback(window_, mouseButtonCallback);
     glfwSetCursorPosCallback(window_, cursorPosCallback);
+    glfwSetScrollCallback(window_, scrollCallback);
 
     setCursorLocked(true);
 }
@@ -16,10 +17,9 @@ void InputManager::update() {
 }
 
 void InputManager::postUpdate() {
-    // Reset mouse delta after it has been consumed by game logic this frame.
-    // Next frame's delta will be set by cursorPosCallback during glfwPollEvents.
     mouseDeltaX_ = 0;
     mouseDeltaY_ = 0;
+    scrollDelta_ = 0;
 }
 
 bool InputManager::isKeyDown(int key) const {
@@ -99,4 +99,9 @@ void InputManager::cursorPosCallback(GLFWwindow* w, double xpos, double ypos) {
     input->mouseY_ = ypos;
     input->lastMouseX_ = xpos;
     input->lastMouseY_ = ypos;
+}
+
+void InputManager::scrollCallback(GLFWwindow* w, double /*xoffset*/, double yoffset) {
+    auto* input = static_cast<InputManager*>(glfwGetWindowUserPointer(w));
+    input->scrollDelta_ = yoffset;
 }

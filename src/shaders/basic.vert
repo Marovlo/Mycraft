@@ -8,6 +8,10 @@ layout(set = 0, binding = 0) uniform UniformBufferObject {
     mat4 model;
     mat4 view;
     mat4 proj;
+    vec4 fogColor;
+    vec4 viewPos;
+    vec2 fogRange;
+    vec2 padding;
 } ubo;
 
 layout(location = 0) out vec3 fragNormal;

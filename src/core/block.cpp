@@ -11,13 +11,23 @@ BlockId BlockRegistry::registerBlock(BlockProperties props) {
     return id;
 }
 
-// ========== Texture ID convention ==========
-// For now, each block type gets a simple sequential texture ID.
-// Later this will map to actual texture atlas positions loaded from assets.
-// Texture IDs:
-//  0 = grass_top, 1 = grass_side, 2 = dirt, 3 = stone,
-//  4 = sand, 5 = oak_log_side, 6 = oak_log_top, 7 = leaves,
-//  8 = water, 9 = cobblestone, 10 = oak_planks, 11 = bedrock, 12 = gravel
+void BlockRegistry::resolveTextures(const std::unordered_map<std::string, uint16_t>& texNameToId) {
+    auto resolve = [&](const std::string& name) -> uint16_t {
+        auto it = texNameToId.find(name);
+        return (it != texNameToId.end()) ? it->second : 0;
+    };
+
+    for (auto& block : blocks_) {
+        auto& tn = block.textureNames;
+        if (tn.top.empty()) continue;  // Air or no textures
+        block.textures.top    = resolve(tn.top);
+        block.textures.bottom = resolve(tn.bottom);
+        block.textures.north  = resolve(tn.north);
+        block.textures.south  = resolve(tn.south);
+        block.textures.east   = resolve(tn.east);
+        block.textures.west   = resolve(tn.west);
+    }
+}
 
 void BlockRegistry::registerDefaults() {
     // Block::Air (id = 0)
@@ -34,7 +44,7 @@ void BlockRegistry::registerDefaults() {
         .name = "grass_block",
         .displayName = "Grass Block",
         .renderType = BlockRenderType::Opaque,
-        .textures = BlockFaceTextures::topBottom(0, 2, 1), // top=grass_top, bottom=dirt, side=grass_side
+        .textureNames = BlockFaceTextureNames::topBottom("grass_top", "dirt", "grass_side"),
         .isSolid = true,
         .isOpaque = true,
         .hardness = 0.6f,
@@ -45,7 +55,7 @@ void BlockRegistry::registerDefaults() {
         .name = "dirt",
         .displayName = "Dirt",
         .renderType = BlockRenderType::Opaque,
-        .textures = BlockFaceTextures::uniform(2),
+        .textureNames = BlockFaceTextureNames::uniform("dirt"),
         .isSolid = true,
         .isOpaque = true,
         .hardness = 0.5f,
@@ -56,7 +66,7 @@ void BlockRegistry::registerDefaults() {
         .name = "stone",
         .displayName = "Stone",
         .renderType = BlockRenderType::Opaque,
-        .textures = BlockFaceTextures::uniform(3),
+        .textureNames = BlockFaceTextureNames::uniform("stone"),
         .isSolid = true,
         .isOpaque = true,
         .hardness = 1.5f,
@@ -67,7 +77,7 @@ void BlockRegistry::registerDefaults() {
         .name = "sand",
         .displayName = "Sand",
         .renderType = BlockRenderType::Opaque,
-        .textures = BlockFaceTextures::uniform(4),
+        .textureNames = BlockFaceTextureNames::uniform("sand"),
         .isSolid = true,
         .isOpaque = true,
         .hardness = 0.5f,
@@ -78,7 +88,7 @@ void BlockRegistry::registerDefaults() {
         .name = "oak_log",
         .displayName = "Oak Log",
         .renderType = BlockRenderType::Opaque,
-        .textures = BlockFaceTextures::topBottom(6, 6, 5), // top/bottom=log_top, sides=log_side
+        .textureNames = BlockFaceTextureNames::topBottom("oak_log_top", "oak_log_top", "oak_log_side"),
         .isSolid = true,
         .isOpaque = true,
         .hardness = 2.0f,
@@ -89,9 +99,9 @@ void BlockRegistry::registerDefaults() {
         .name = "oak_leaves",
         .displayName = "Oak Leaves",
         .renderType = BlockRenderType::Foliage,
-        .textures = BlockFaceTextures::uniform(7),
+        .textureNames = BlockFaceTextureNames::uniform("oak_leaves"),
         .isSolid = true,
-        .isOpaque = false,  // Leaves don't fully occlude
+        .isOpaque = false,
         .hardness = 0.2f,
     });
 
@@ -100,7 +110,7 @@ void BlockRegistry::registerDefaults() {
         .name = "water",
         .displayName = "Water",
         .renderType = BlockRenderType::Liquid,
-        .textures = BlockFaceTextures::uniform(8),
+        .textureNames = BlockFaceTextureNames::uniform("water_still"),
         .isSolid = false,
         .isOpaque = false,
         .isLiquid = true,
@@ -112,7 +122,7 @@ void BlockRegistry::registerDefaults() {
         .name = "cobblestone",
         .displayName = "Cobblestone",
         .renderType = BlockRenderType::Opaque,
-        .textures = BlockFaceTextures::uniform(9),
+        .textureNames = BlockFaceTextureNames::uniform("cobblestone"),
         .isSolid = true,
         .isOpaque = true,
         .hardness = 2.0f,
@@ -123,7 +133,7 @@ void BlockRegistry::registerDefaults() {
         .name = "oak_planks",
         .displayName = "Oak Planks",
         .renderType = BlockRenderType::Opaque,
-        .textures = BlockFaceTextures::uniform(10),
+        .textureNames = BlockFaceTextureNames::uniform("oak_planks"),
         .isSolid = true,
         .isOpaque = true,
         .hardness = 2.0f,
@@ -134,10 +144,10 @@ void BlockRegistry::registerDefaults() {
         .name = "bedrock",
         .displayName = "Bedrock",
         .renderType = BlockRenderType::Opaque,
-        .textures = BlockFaceTextures::uniform(11),
+        .textureNames = BlockFaceTextureNames::uniform("bedrock"),
         .isSolid = true,
         .isOpaque = true,
-        .hardness = -1.0f,  // Unbreakable
+        .hardness = -1.0f,
     });
 
     // Block::Gravel (id = 11)
@@ -145,7 +155,7 @@ void BlockRegistry::registerDefaults() {
         .name = "gravel",
         .displayName = "Gravel",
         .renderType = BlockRenderType::Opaque,
-        .textures = BlockFaceTextures::uniform(12),
+        .textureNames = BlockFaceTextureNames::uniform("gravel"),
         .isSolid = true,
         .isOpaque = true,
         .hardness = 0.6f,

@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include <array>
+#include <unordered_map>
 #include <glm/glm.hpp>
 #include "common.h"
 
@@ -68,11 +69,24 @@ struct BlockFaceTextures {
     }
 };
 
+// Per-face texture names (resolved to tile indices after atlas is built)
+struct BlockFaceTextureNames {
+    std::string top, bottom, north, south, east, west;
+
+    static BlockFaceTextureNames uniform(const std::string& name) {
+        return {name, name, name, name, name, name};
+    }
+    static BlockFaceTextureNames topBottom(const std::string& top, const std::string& bottom, const std::string& side) {
+        return {top, bottom, side, side, side, side};
+    }
+};
+
 struct BlockProperties {
     std::string name;               // e.g., "grass_block"
     std::string displayName;        // e.g., "Grass Block"
     BlockRenderType renderType = BlockRenderType::None;
     BlockFaceTextures textures = {};
+    BlockFaceTextureNames textureNames = {};  // resolved to textures by resolveTextures()
 
     bool isSolid       = false;     // Has collision
     bool isOpaque      = false;     // Blocks light / occludes neighbors
@@ -111,6 +125,10 @@ public:
 
     // Initialize all built-in block types
     void registerDefaults();
+
+    // Resolve texture names to atlas tile indices after atlas is built.
+    // texNameToId maps texture name (e.g., "grass_top") to atlas tile index.
+    void resolveTextures(const std::unordered_map<std::string, uint16_t>& texNameToId);
 
 private:
     BlockRegistry() = default;

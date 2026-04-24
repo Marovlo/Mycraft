@@ -1,15 +1,14 @@
 #include "mesh_builder.h"
+#include "texture_atlas.h"
 
 MeshBuilder::FaceQuad MeshBuilder::getFaceQuad(Direction dir) {
-    // Vertices must be counter-clockwise when viewed from the face's outward normal direction.
-    // Triangles: v0→v1→v2, v0→v2→v3
     switch (dir) {
         case Direction::PosX: return {{1,0,0},{1,1,0},{1,1,1},{1,0,1}};
         case Direction::NegX: return {{0,0,1},{0,1,1},{0,1,0},{0,0,0}};
         case Direction::PosY: return {{0,1,1},{1,1,1},{1,1,0},{0,1,0}};
         case Direction::NegY: return {{0,0,0},{1,0,0},{1,0,1},{0,0,1}};
-        case Direction::PosZ: return {{1,0,1},{1,1,1},{0,1,1},{0,0,1}};  // fixed: reversed winding
-        case Direction::NegZ: return {{0,0,0},{0,1,0},{1,1,0},{1,0,0}};  // fixed: reversed winding
+        case Direction::PosZ: return {{1,0,1},{1,1,1},{0,1,1},{0,0,1}};
+        case Direction::NegZ: return {{0,0,0},{0,1,0},{1,1,0},{1,0,0}};
         default: return {};
     }
 }
@@ -18,15 +17,16 @@ void MeshBuilder::addFace(const glm::vec3& blockPos, Direction dir, uint16_t tex
     FaceQuad quad = getFaceQuad(dir);
     glm::vec3 normal = directionNormal(dir);
 
-    // Normalize UV to atlas coordinates: each tile occupies [texId/N, (texId+1)/N] in U
-    float invN = 1.0f / static_cast<float>(atlasTileCount_);
-    float uMin = static_cast<float>(texId) * invN;
-    float uMax = static_cast<float>(texId + 1) * invN;
+    // Get 2D UV rect from atlas: {uMin, vMin, uMax, vMax}
+    glm::vec4 uvRect(0.0f, 0.0f, 1.0f, 1.0f);
+    if (atlas_) {
+        uvRect = atlas_->getTileUV(texId);
+    }
 
-    glm::vec2 uv0(uMin, 0.0f);
-    glm::vec2 uv1(uMin, 1.0f);
-    glm::vec2 uv2(uMax, 1.0f);
-    glm::vec2 uv3(uMax, 0.0f);
+    glm::vec2 uv0(uvRect.x, uvRect.y);  // top-left
+    glm::vec2 uv1(uvRect.x, uvRect.w);  // bottom-left
+    glm::vec2 uv2(uvRect.z, uvRect.w);  // bottom-right
+    glm::vec2 uv3(uvRect.z, uvRect.y);  // top-right
 
     uint32_t baseIdx = static_cast<uint32_t>(vertices_.size());
 
@@ -35,7 +35,6 @@ void MeshBuilder::addFace(const glm::vec3& blockPos, Direction dir, uint16_t tex
     vertices_.push_back({blockPos + quad.v2, normal, uv2});
     vertices_.push_back({blockPos + quad.v3, normal, uv3});
 
-    // Two triangles per face (CCW winding)
     indices_.push_back(baseIdx + 0);
     indices_.push_back(baseIdx + 1);
     indices_.push_back(baseIdx + 2);
@@ -48,8 +47,6 @@ void MeshBuilder::build(const World& world, const Chunk& chunk) {
     vertices_.clear();
     indices_.clear();
 
-    // Pre-allocate: rough estimate — exposed surface faces are a small fraction of total.
-    // A typical chunk has ~2000-8000 visible faces. Reserve conservatively.
     vertices_.reserve(4096 * 4);
     indices_.reserve(4096 * 6);
 
@@ -70,7 +67,6 @@ void MeshBuilder::build(const World& world, const Chunk& chunk) {
                                    static_cast<float>(y),
                                    static_cast<float>(wz));
 
-                // Check each face
                 for (int d = 0; d < static_cast<int>(Direction::COUNT); d++) {
                     Direction dir = static_cast<Direction>(d);
                     glm::ivec3 offset = directionOffset(dir);
@@ -79,22 +75,18 @@ void MeshBuilder::build(const World& world, const Chunk& chunk) {
                     int lny = y + offset.y;
                     int lnz = z + offset.z;
 
-                    // Fast path: neighbor is within the same chunk — avoid world hash lookup
                     BlockId neighbor;
                     if (lnx >= 0 && lnx < CHUNK_SIZE &&
                         lny >= 0 && lny < CHUNK_HEIGHT &&
                         lnz >= 0 && lnz < CHUNK_SIZE) {
                         neighbor = chunk.getBlock(lnx, lny, lnz);
                     } else {
-                        // Border: query world (cross-chunk or out-of-bounds)
                         neighbor = world.getBlock(wx + offset.x, y + offset.y, wz + offset.z);
                     }
 
                     const auto& neighborProps = registry.get(neighbor);
 
-                    // Determine if this face should be rendered
                     bool shouldRender = false;
-
                     if (neighborProps.isAir()) {
                         shouldRender = true;
                     } else if (!neighborProps.isOpaque) {

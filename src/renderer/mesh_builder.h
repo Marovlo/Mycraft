@@ -8,12 +8,14 @@
 
 #include <vector>
 
+class TextureAtlas;
+
 // Builds the vertex/index data for a chunk by inspecting neighbors
 // and culling hidden faces.
 class MeshBuilder {
 public:
-    // Set the number of tiles in the texture atlas (must be called before build)
-    void setAtlasTileCount(uint16_t count) { atlasTileCount_ = count; }
+    // Set the texture atlas for UV coordinate computation (must be called before build)
+    void setAtlas(const TextureAtlas* atlas) { atlas_ = atlas; }
 
     // Build mesh data for a chunk.
     // Requires access to the world for cross-chunk neighbor lookups.
@@ -28,7 +30,7 @@ public:
 private:
     std::vector<Vertex> vertices_;
     std::vector<uint32_t> indices_;
-    uint16_t atlasTileCount_ = 16; // default
+    const TextureAtlas* atlas_ = nullptr;
 
     // Face geometry for each direction
     struct FaceQuad {

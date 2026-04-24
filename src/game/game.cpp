@@ -4,44 +4,34 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <algorithm>
 #include <cmath>
-#include <vector>
-#include <cstdlib>
+#include <string>
+#include <GLFW/glfw3.h>
 
 Game::Game() = default;
 
 Game::~Game() {
-    // Cleanup meshes before engine
     for (auto& [key, chunk] : world_.chunks()) {
         if (chunk.hasMesh()) {
             engine_.destroyMesh(chunk.getMesh());
         }
     }
-    if (hasTextureAtlas_) {
-        engine_.destroyTexture(blockTextureAtlas_);
-    }
+    textureAtlas_.destroy(engine_);
     engine_.cleanup();
 }
 
 void Game::init() {
-    // Register all block types
     BlockRegistry::instance().registerDefaults();
 
-    // Init engine
     if (!engine_.init(1280, 720, "VoxelCraft")) {
         throw std::runtime_error("Failed to init engine");
     }
 
-    // Init input
     input_.init(engine_.getWindow());
-
-    // Init terrain generator
     terrainGen_ = std::make_unique<OverworldGenerator>(42);
 
-    // Generate texture atlas
-    generateBlockTexture();
+    loadTextureAtlas();
 
-    // Set engine callbacks
-    engine_.onUpdate = [this](float dt) { update(dt); };
+    engine_.onUpdate = [this](float) { update(0.0f); };
     engine_.onRender = [this](VkCommandBuffer cmd, uint32_t) { render(cmd); };
 }
 
@@ -49,24 +39,48 @@ void Game::run() {
     engine_.run();
 }
 
-void Game::update(float dt) {
-    dt = std::min(dt, 0.05f);
+void Game::loadTextureAtlas() {
+    std::string texDir = std::string(ASSET_DIR) + "/textures/blocks";
 
-    input_.update();
-    handleInput(dt);
-    input_.postUpdate();
+    if (!textureAtlas_.build(engine_, texDir, 16)) {
+        throw std::runtime_error("Failed to build texture atlas from: " + texDir);
+    }
 
-    Physics::update(player_, world_, dt);
+    std::unordered_map<std::string, uint16_t> nameMap;
+    auto& registry = BlockRegistry::instance();
+    for (uint16_t id = 0; id < registry.blockCount(); id++) {
+        const auto& props = registry.get(id);
+        auto addName = [&](const std::string& n) {
+            if (!n.empty() && nameMap.find(n) == nameMap.end()) {
+                nameMap[n] = textureAtlas_.getTileIndex(n);
+            }
+        };
+        addName(props.textureNames.top);
+        addName(props.textureNames.bottom);
+        addName(props.textureNames.north);
+        addName(props.textureNames.south);
+        addName(props.textureNames.east);
+        addName(props.textureNames.west);
+    }
+    registry.resolveTextures(nameMap);
 
-    // Cache player chunk position for this frame (used by multiple functions)
-    playerChunkX_ = blockToChunk(static_cast<int>(std::floor(player_.position.x)));
-    playerChunkZ_ = blockToChunk(static_cast<int>(std::floor(player_.position.z)));
+    engine_.updateTextureDescriptor(textureAtlas_.getImage().imageView, engine_.getDefaultSampler());
+    meshBuilder_.setAtlas(&textureAtlas_);
+}
 
-    updateChunks();
+void Game::update(float) {
+    // Advance tick clock — returns how many fixed ticks to run this frame
+    double now = glfwGetTime();
+    int ticks = tickClock_.advance(now);
+
+    for (int i = 0; i < ticks; i++) {
+        gameTick();
+    }
+
+    // Per-frame work (visual, not gameplay)
     buildMeshes();
-    unloadDistantChunks();
 
-    // Update UBO
+    // Update UBO for rendering
     float aspect = static_cast<float>(engine_.getWindowWidth()) /
                    static_cast<float>(engine_.getWindowHeight());
 
@@ -74,21 +88,39 @@ void Game::update(float dt) {
     ubo.model = glm::mat4(1.0f);
     ubo.view  = player_.getViewMatrix();
     ubo.proj  = player_.getProjectionMatrix(aspect);
+    ubo.fogColor = glm::vec4(0.53f, 0.81f, 0.92f, 1.0f);
+    ubo.viewPos  = glm::vec4(player_.getEyePosition(), 1.0f);
+    float fogStart = static_cast<float>((RENDER_DISTANCE - 2) * CHUNK_SIZE);
+    float fogEnd   = static_cast<float>(RENDER_DISTANCE * CHUNK_SIZE);
+    ubo.fogRange = glm::vec2(fogStart, fogEnd);
     engine_.updateUniformBuffer(ubo);
 }
 
-void Game::handleInput(float dt) {
-    // ESC to toggle cursor
+void Game::gameTick() {
+    const float dt = static_cast<float>(TickClock::TICK_DURATION);
+
+    input_.update();
+    handleInput();
+    input_.postUpdate();
+
+    Physics::update(player_, world_, dt);
+
+    playerChunkX_ = blockToChunk(static_cast<int>(std::floor(player_.position.x)));
+    playerChunkZ_ = blockToChunk(static_cast<int>(std::floor(player_.position.z)));
+
+    updateChunks();
+    unloadDistantChunks();
+}
+
+void Game::handleInput() {
     if (input_.isKeyPressed(GLFW_KEY_ESCAPE)) {
         input_.toggleCursorLock();
     }
 
-    // Look
     if (input_.isCursorLocked()) {
         player_.look(input_.getMouseDeltaX(), input_.getMouseDeltaY());
     }
 
-    // Movement
     glm::vec3 move(0.0f);
     if (input_.isKeyDown(GLFW_KEY_W)) move += player_.getFlatForward();
     if (input_.isKeyDown(GLFW_KEY_S)) move -= player_.getFlatForward();
@@ -97,20 +129,17 @@ void Game::handleInput(float dt) {
 
     if (glm::length(move) > 0.01f) move = glm::normalize(move);
 
-    // Sprint
     player_.sprinting = input_.isKeyDown(GLFW_KEY_LEFT_CONTROL);
     float speed = player_.sprinting ? SPRINT_SPEED : MOVE_SPEED;
 
     player_.velocity.x = move.x * speed;
     player_.velocity.z = move.z * speed;
 
-    // Jump
     if (input_.isKeyDown(GLFW_KEY_SPACE) && player_.onGround) {
         player_.velocity.y = JUMP_FORCE;
         player_.onGround = false;
     }
 
-    // Block selection (1-9)
     for (int i = 0; i < 9; i++) {
         if (input_.isKeyPressed(GLFW_KEY_1 + i)) {
             BlockId id = static_cast<BlockId>(i + 1);
@@ -120,7 +149,6 @@ void Game::handleInput(float dt) {
         }
     }
 
-    // Block interaction
     if (input_.isCursorLocked()) {
         if (input_.isMouseButtonPressed(GLFW_MOUSE_BUTTON_LEFT)) {
             RayHit hit = raycastWorld(world_, player_.getEyePosition(),
@@ -168,8 +196,6 @@ void Game::buildMeshes() {
         int dz = chunk.chunkZ() - playerChunkZ_;
         if (dx * dx + dz * dz > (RENDER_DISTANCE + 1) * (RENDER_DISTANCE + 1)) continue;
 
-        // Skip if any neighbor chunk hasn't been generated yet —
-        // building now would produce incorrect face culling at borders
         int cx = chunk.chunkX();
         int cz = chunk.chunkZ();
         const Chunk* nxp = world_.getChunk(cx + 1, cz);
@@ -196,7 +222,7 @@ void Game::buildMeshes() {
         }
         chunk.clearMeshDirty();
 
-        if (++meshBuilds >= 4) break; // Limit per frame to avoid stalls
+        if (++meshBuilds >= 4) break;
     }
 }
 
@@ -231,58 +257,4 @@ void Game::render(VkCommandBuffer cmd) {
         vkCmdBindIndexBuffer(cmd, mesh.indexBuffer.buffer, 0, VK_INDEX_TYPE_UINT32);
         vkCmdDrawIndexed(cmd, mesh.indexCount, 1, 0, 0, 0);
     }
-}
-
-void Game::generateBlockTexture() {
-    // Procedural color texture atlas: one tile per texture ID
-    // This is a placeholder — will be replaced with real textures later
-    const int TILE = 16;
-    uint16_t texCount = BlockRegistry::instance().blockCount() * 2; // Extra for per-face textures
-    texCount = std::max(texCount, static_cast<uint16_t>(16));
-
-    // Atlas layout: texCount tiles wide, 1 tile tall
-    int atlasW = texCount * TILE;
-    int atlasH = TILE;
-    std::vector<uint8_t> pixels(atlasW * atlasH * 4, 255);
-
-    // Define colors for each texture ID
-    struct TexColor { float r, g, b; };
-    TexColor colors[] = {
-        {0.45f, 0.75f, 0.25f},  // 0: grass_top
-        {0.36f, 0.60f, 0.18f},  // 1: grass_side (greenish-brown)
-        {0.55f, 0.37f, 0.24f},  // 2: dirt
-        {0.50f, 0.50f, 0.50f},  // 3: stone
-        {0.90f, 0.85f, 0.60f},  // 4: sand
-        {0.55f, 0.35f, 0.15f},  // 5: oak_log_side
-        {0.60f, 0.50f, 0.30f},  // 6: oak_log_top
-        {0.20f, 0.55f, 0.12f},  // 7: leaves
-        {0.20f, 0.35f, 0.75f},  // 8: water
-        {0.45f, 0.45f, 0.45f},  // 9: cobblestone
-        {0.65f, 0.50f, 0.28f},  // 10: oak_planks
-        {0.30f, 0.30f, 0.30f},  // 11: bedrock
-        {0.55f, 0.52f, 0.50f},  // 12: gravel
-    };
-    int numColors = sizeof(colors) / sizeof(colors[0]);
-
-    for (int t = 0; t < texCount && t < numColors; t++) {
-        TexColor c = colors[t];
-        for (int y = 0; y < TILE; y++) {
-            for (int x = 0; x < TILE; x++) {
-                int idx = (y * atlasW + t * TILE + x) * 4;
-                // Subtle noise for texture variation
-                float noise = ((float)(rand() % 20) - 10.0f) / 255.0f;
-                pixels[idx + 0] = static_cast<uint8_t>(std::clamp((int)((c.r + noise) * 255), 0, 255));
-                pixels[idx + 1] = static_cast<uint8_t>(std::clamp((int)((c.g + noise) * 255), 0, 255));
-                pixels[idx + 2] = static_cast<uint8_t>(std::clamp((int)((c.b + noise) * 255), 0, 255));
-                pixels[idx + 3] = 255;
-            }
-        }
-    }
-
-    blockTextureAtlas_ = engine_.uploadTexture(pixels.data(), atlasW, atlasH, 4);
-    engine_.updateTextureDescriptor(blockTextureAtlas_.imageView, engine_.getDefaultSampler());
-    hasTextureAtlas_ = true;
-
-    // Tell mesh builder how many tiles are in the atlas for UV normalization
-    meshBuilder_.setAtlasTileCount(texCount);
 }

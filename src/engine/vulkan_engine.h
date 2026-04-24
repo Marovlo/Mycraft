@@ -29,6 +29,10 @@ struct UniformBufferObject {
     alignas(16) glm::mat4 model;
     alignas(16) glm::mat4 view;
     alignas(16) glm::mat4 proj;
+    alignas(16) glm::vec4 fogColor;     // rgb = color, a = unused
+    alignas(16) glm::vec4 viewPos;      // xyz = camera position, w = unused
+    alignas(8)  glm::vec2 fogRange;     // x = fogStart, y = fogEnd
+    alignas(8)  glm::vec2 padding;
 };
 
 // --- Allocated buffer helper ---
