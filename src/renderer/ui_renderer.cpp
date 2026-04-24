@@ -90,10 +90,20 @@ void UIRenderer::ensureBufferCapacity() {
 }
 
 void UIRenderer::flush(VkCommandBuffer cmd, uint32_t screenWidth, uint32_t screenHeight) {
+    flushWithTexture(cmd, screenWidth, screenHeight, VK_NULL_HANDLE, VK_NULL_HANDLE);
+}
+
+void UIRenderer::flushWithTexture(VkCommandBuffer cmd, uint32_t screenWidth, uint32_t screenHeight,
+                                   VkImageView textureView, VkSampler sampler) {
     if (vertices_.empty() || !engine_) {
         vertices_.clear();
         indices_.clear();
         return;
+    }
+
+    // Temporarily update texture descriptor if a custom texture is specified
+    if (textureView != VK_NULL_HANDLE && sampler != VK_NULL_HANDLE) {
+        engine_->updateTextureDescriptor(textureView, sampler);
     }
 
     ensureBufferCapacity();

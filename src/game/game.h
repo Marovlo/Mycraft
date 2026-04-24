@@ -8,9 +8,12 @@
 #include "renderer/mesh_builder.h"
 #include "renderer/texture_atlas.h"
 #include "renderer/ui_renderer.h"
+#include "renderer/item_icon.h"
 #include "player/player.h"
 #include "player/physics.h"
+#include "player/inventory.h"
 #include "core/tick_clock.h"
+#include "ui/hud.h"
 
 #include <memory>
 
@@ -43,6 +46,9 @@ private:
     MeshBuilder meshBuilder_;
     TickClock tickClock_;
     UIRenderer uiRenderer_;
+    ItemIconAtlas iconAtlas_;
+    HUD hud_;
+    Inventory inventory_;
 
     // Texture atlas
     TextureAtlas textureAtlas_;

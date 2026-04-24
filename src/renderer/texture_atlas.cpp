@@ -89,6 +89,10 @@ bool TextureAtlas::build(VulkanEngine& engine, const std::string& textureDir, ui
     image_ = engine.uploadTexture(atlasPixels.data(),
         static_cast<int>(atlasPixelSize), static_cast<int>(atlasPixelSize), 4);
 
+    // Keep CPU pixels for icon pre-rendering
+    cpuPixels_ = std::move(atlasPixels);
+    atlasPixelSize_ = atlasPixelSize;
+
     std::cout << "TextureAtlas: loaded " << totalTiles_ << " tiles ("
               << tilesPerRow_ << "x" << tilesPerRow_ << " grid, "
               << atlasPixelSize << "x" << atlasPixelSize << " px)\n";

@@ -19,7 +19,12 @@ public:
     void drawCrosshair(float screenW, float screenH, float size = 20.0f, float thickness = 2.0f);
 
     // Submit all queued draws. Call during render callback.
+    // textureView/sampler: which texture to use for this batch (default = block atlas)
     void flush(VkCommandBuffer cmd, uint32_t screenWidth, uint32_t screenHeight);
+
+    // Flush with a specific texture (for icon atlas etc.)
+    void flushWithTexture(VkCommandBuffer cmd, uint32_t screenWidth, uint32_t screenHeight,
+                          VkImageView textureView, VkSampler sampler);
 
 private:
     VulkanEngine* engine_ = nullptr;

@@ -41,4 +41,12 @@ private:
 
     std::unordered_map<std::string, uint16_t> nameToIndex_;
     std::vector<std::string> indexToName_;
+
+    // CPU-side pixel data (kept for icon pre-rendering)
+    std::vector<uint8_t> cpuPixels_;
+    uint32_t atlasPixelSize_ = 0;
+
+public:
+    const std::vector<uint8_t>& getCpuPixels() const { return cpuPixels_; }
+    uint32_t getAtlasPixelSize() const { return atlasPixelSize_; }
 };

@@ -20,6 +20,7 @@ Game::~Game() {
         engine_.destroyMesh(targetHighlight_);
     }
     uiRenderer_.destroy();
+    iconAtlas_.destroy(engine_);
     textureAtlas_.destroy(engine_);
     engine_.cleanup();
 }
@@ -37,6 +38,22 @@ void Game::init() {
 
     loadTextureAtlas();
     uiRenderer_.init(&engine_);
+
+    // Build item icon atlas (3D isometric block thumbnails)
+    iconAtlas_.build(engine_, textureAtlas_,
+                     textureAtlas_.getCpuPixels(), textureAtlas_.getAtlasPixelSize());
+
+    // Init HUD
+    hud_.init(&uiRenderer_, &iconAtlas_, &engine_);
+
+    // Give player some starting items in hotbar
+    inventory_.getSlot(0) = {1, 64, 0};   // Grass block
+    inventory_.getSlot(1) = {2, 64, 0};   // Dirt
+    inventory_.getSlot(2) = {3, 64, 0};   // Cobblestone
+    inventory_.getSlot(3) = {4, 64, 0};   // Sand
+    inventory_.getSlot(4) = {5, 64, 0};   // Oak Log
+    inventory_.getSlot(5) = {7, 64, 0};   // Oak Planks
+    inventory_.getSlot(6) = {10, 64, 0};  // Stone
 
     engine_.onUpdate = [this](float) { update(0.0f); };
     engine_.onRender = [this](VkCommandBuffer cmd, uint32_t) { render(cmd); };
@@ -112,9 +129,10 @@ void Game::update(float) {
     float fogEnd   = static_cast<float>(RENDER_DISTANCE * CHUNK_SIZE);
     ubo.fogRange = glm::vec2(fogStart, fogEnd);
 
+    // Queue HUD draws for this frame
     float sw = static_cast<float>(engine_.getWindowWidth());
     float sh = static_cast<float>(engine_.getWindowHeight());
-    uiRenderer_.drawCrosshair(sw, sh, 30.0f, 3.0f);
+    hud_.draw(sw, sh, inventory_);
 
     engine_.updateUniformBuffer(ubo);
 
@@ -216,17 +234,23 @@ void Game::handleFrameInput() {
         player_.look(input_.getMouseDeltaX(), input_.getMouseDeltaY());
     }
 
-    // Block selection (1-9) — must be per-frame to not miss key presses
+    // Hotbar selection (1-9)
     for (int i = 0; i < 9; i++) {
         if (input_.isKeyPressed(GLFW_KEY_1 + i)) {
-            BlockId id = static_cast<BlockId>(i + 1);
-            if (id < BlockRegistry::instance().blockCount()) {
-                player_.selectedBlock = id;
-            }
+            inventory_.setSelectedSlot(i);
         }
     }
 
-    // Block interaction — must be per-frame to not miss clicks
+    // Scroll wheel to cycle hotbar
+    double scroll = input_.getScrollDelta();
+    if (scroll != 0.0) {
+        int slot = inventory_.getSelectedSlot();
+        slot -= static_cast<int>(scroll);  // scroll up = previous slot
+        if (slot < 0) slot += Inventory::HOTBAR_SIZE;
+        inventory_.setSelectedSlot(slot % Inventory::HOTBAR_SIZE);
+    }
+
+    // Block interaction
     if (input_.isCursorLocked()) {
         if (input_.isMouseButtonPressed(GLFW_MOUSE_BUTTON_LEFT)) {
             RayHit hit = raycastWorld(world_, player_.getEyePosition(),
@@ -240,7 +264,14 @@ void Game::handleFrameInput() {
             RayHit hit = raycastWorld(world_, player_.getEyePosition(),
                                       player_.getForward(), MAX_REACH);
             if (hit.hit) {
-                world_.setBlock(hit.prevX, hit.prevY, hit.prevZ, player_.selectedBlock);
+                const auto& held = inventory_.getHeldItem();
+                if (!held.isEmpty()) {
+                    const auto& itemProps = ItemRegistry::instance().get(held.id);
+                    if (itemProps.type == ItemType::Block && itemProps.blockId > 0) {
+                        world_.setBlock(hit.prevX, hit.prevY, hit.prevZ, itemProps.blockId);
+                        // Don't consume in creative-like mode for now
+                    }
+                }
             }
         }
     }
@@ -367,6 +398,10 @@ void Game::render(VkCommandBuffer cmd) {
         vkCmdDrawIndexed(cmd, targetHighlight_.indexCount, 1, 0, 0, 0);
     }
 
-    // Draw 2D UI on top
-    uiRenderer_.flush(cmd, engine_.getWindowWidth(), engine_.getWindowHeight());
+    // Draw 2D UI on top (uses icon atlas texture for item icons)
+    uiRenderer_.flushWithTexture(cmd, engine_.getWindowWidth(), engine_.getWindowHeight(),
+                                  iconAtlas_.getImage().imageView, engine_.getDefaultSampler());
+
+    // Restore block atlas texture for next frame's 3D rendering
+    engine_.updateTextureDescriptor(textureAtlas_.getImage().imageView, engine_.getDefaultSampler());
 }
