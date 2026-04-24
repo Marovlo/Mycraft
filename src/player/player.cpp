@@ -34,7 +34,7 @@ glm::mat4 Player::getViewMatrix() const {
 }
 
 glm::mat4 Player::getProjectionMatrix(float aspectRatio) const {
-    auto proj = glm::perspective(glm::radians(fov), aspectRatio, 0.1f, 1000.0f);
+    auto proj = glm::perspective(glm::radians(fov), aspectRatio, 0.05f, 1000.0f);
     proj[1][1] *= -1; // Vulkan Y flip
     return proj;
 }
