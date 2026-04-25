@@ -3,6 +3,7 @@
 layout(location = 0) in vec3 inPosition;
 layout(location = 1) in vec3 inNormal;
 layout(location = 2) in vec2 inTexCoord;
+layout(location = 3) in float inLight;
 
 layout(set = 0, binding = 0) uniform UniformBufferObject {
     mat4 model;
@@ -11,12 +12,14 @@ layout(set = 0, binding = 0) uniform UniformBufferObject {
     vec4 fogColor;
     vec4 viewPos;
     vec2 fogRange;
-    vec2 padding;
+    float underwater;
+    float waterSurfaceY;
 } ubo;
 
 layout(location = 0) out vec3 fragNormal;
 layout(location = 1) out vec2 fragTexCoord;
 layout(location = 2) out vec3 fragWorldPos;
+layout(location = 3) out float fragLight;
 
 void main() {
     vec4 worldPos = ubo.model * vec4(inPosition, 1.0);
@@ -24,4 +27,5 @@ void main() {
     fragNormal = mat3(transpose(inverse(ubo.model))) * inNormal;
     fragTexCoord = inTexCoord;
     fragWorldPos = worldPos.xyz;
+    fragLight = inLight;
 }

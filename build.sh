@@ -2,12 +2,16 @@
 # ============================================================================
 # VoxelCraft — One-click build & run
 # Usage:
-#   ./build.sh              Build (Release) and run
-#   ./build.sh --debug      Build (Debug) and run
-#   ./build.sh --build      Build only, don't run
-#   ./build.sh --run        Run only (skip build)
-#   ./build.sh --clean      Clean build directory and rebuild
-#   ./build.sh --jobs N     Use N parallel jobs (default: auto)
+#   ./build.sh                  Build (Release) and run
+#   ./build.sh --debug          Build with CMAKE_BUILD_TYPE=Debug (symbols, no opt)
+#   ./build.sh --build          Build only, don't run
+#   ./build.sh --run            Run only (skip build)
+#   ./build.sh --clean          Clean build directory and rebuild
+#   ./build.sh --jobs N         Use N parallel jobs (default: auto)
+#   ./build.sh --vlog[=CATS]    Enable runtime debug logging.
+#                               CATS: comma-separated categories (entity,mining,input,render,ui,physics)
+#                               Omit CATS (just --vlog) to enable all.
+# Any unrecognized flag is passed through to the game executable at run time.
 # ============================================================================
 set -euo pipefail
 
@@ -18,6 +22,7 @@ DO_BUILD=true
 DO_RUN=true
 DO_CLEAN=false
 JOBS=""
+EXTRA_RUN_ARGS=()
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -33,16 +38,18 @@ fail()  { echo -e "${RED}[FAIL]${NC}  $*"; exit 1; }
 # ---------- Parse args ----------
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --debug)  BUILD_TYPE="Debug"; shift ;;
-        --build)  DO_RUN=false; shift ;;
-        --run)    DO_BUILD=false; shift ;;
-        --clean)  DO_CLEAN=true; shift ;;
-        --jobs)   JOBS="$2"; shift 2 ;;
+        --debug)   BUILD_TYPE="Debug"; shift ;;
+        --build)   DO_RUN=false; shift ;;
+        --run)     DO_BUILD=false; shift ;;
+        --clean)   DO_CLEAN=true; shift ;;
+        --jobs)    JOBS="$2"; shift 2 ;;
+        --vlog)    EXTRA_RUN_ARGS+=("--debug"); shift ;;
+        --vlog=*)  EXTRA_RUN_ARGS+=("--debug=${1#--vlog=}"); shift ;;
         -h|--help)
-            head -n 10 "$0" | grep "^#" | sed 's/^# *//'
+            head -n 16 "$0" | grep "^#" | sed 's/^# *//'
             exit 0
             ;;
-        *) warn "Unknown option: $1"; shift ;;
+        *) warn "Unknown option (passing through to game): $1"; EXTRA_RUN_ARGS+=("$1"); shift ;;
     esac
 done
 
@@ -128,9 +135,16 @@ run() {
 
     echo ""
     ok "Launching VoxelCraft..."
-    echo "────────────────────────────────────────"
-    cd "$BUILD_DIR"
-    exec ./VoxelEngine "$@"
+    if [ ${#EXTRA_RUN_ARGS[@]} -gt 0 ]; then
+        info "Runtime args: ${EXTRA_RUN_ARGS[*]}"
+        echo "────────────────────────────────────────"
+        cd "$BUILD_DIR"
+        exec ./VoxelEngine "${EXTRA_RUN_ARGS[@]}"
+    else
+        echo "────────────────────────────────────────"
+        cd "$BUILD_DIR"
+        exec ./VoxelEngine
+    fi
 }
 
 # ---------- Main ----------

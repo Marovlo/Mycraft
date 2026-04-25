@@ -19,9 +19,10 @@ struct Vertex {
     glm::vec3 position;
     glm::vec3 normal;
     glm::vec2 texCoord;
+    float     light = 1.0f;  // 0.0 (dark) to 1.0 (full bright)
 
     static VkVertexInputBindingDescription getBindingDescription();
-    static std::array<VkVertexInputAttributeDescription, 3> getAttributeDescriptions();
+    static std::array<VkVertexInputAttributeDescription, 4> getAttributeDescriptions();
 };
 
 // --- Uniform buffer ---
@@ -32,7 +33,8 @@ struct UniformBufferObject {
     alignas(16) glm::vec4 fogColor;     // rgb = color, a = unused
     alignas(16) glm::vec4 viewPos;      // xyz = camera position, w = unused
     alignas(8)  glm::vec2 fogRange;     // x = fogStart, y = fogEnd
-    alignas(8)  glm::vec2 padding;
+    alignas(4)  float     underwater;    // 1.0 if camera eye is in water, 0.0 otherwise
+    alignas(4)  float     waterSurfaceY; // Y coordinate of water surface (sea level)
 };
 
 // --- Allocated buffer helper ---
@@ -151,6 +153,9 @@ public:
     void updateTextureDescriptor(VkImageView imageView, VkSampler sampler);
     VkSampler getDefaultSampler() const { return defaultSampler_; }
 
+    // Clear color (sky color, changes when underwater)
+    void setClearColor(float r, float g, float b) { clearColor_ = {r, g, b, 1.0f}; }
+
     // Screenshot: save current framebuffer to PNG file
     void requestScreenshot(const std::string& filepath);
 
@@ -159,6 +164,9 @@ public:
     // These are drawn on top of 3D scene (no depth test, alpha blend).
     VkPipeline getUIPipeline() const { return uiPipeline_; }
     VkPipelineLayout getUIPipelineLayout() const { return uiPipelineLayout_; }
+
+    // Transparent 3D pipeline (same layout as opaque, but alpha blend + no depth write)
+    VkPipeline getTransparentPipeline() const { return transparentPipeline_; }
 
 private:
     // Init steps
@@ -222,9 +230,12 @@ private:
     AllocatedImage depthImage_;
     VkFormat depthFormat_;
 
-    // Pipeline (3D world)
+    // Pipeline (3D world — opaque pass)
     VkPipelineLayout pipelineLayout_ = VK_NULL_HANDLE;
     VkPipeline graphicsPipeline_ = VK_NULL_HANDLE;
+
+    // Pipeline (3D world — transparent pass: alpha blend ON, depth write OFF)
+    VkPipeline transparentPipeline_ = VK_NULL_HANDLE;
 
     // Pipeline (2D UI overlay)
     VkPipelineLayout uiPipelineLayout_ = VK_NULL_HANDLE;
@@ -241,6 +252,9 @@ private:
     // Default resources
     VkSampler defaultSampler_ = VK_NULL_HANDLE;
     AllocatedImage defaultTexture_;
+
+    // Clear color
+    glm::vec4 clearColor_ {0.53f, 0.81f, 0.92f, 1.0f};
 
     // Cleanup
     DeletionQueue mainDeletionQueue_;

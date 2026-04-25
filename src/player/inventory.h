@@ -3,6 +3,9 @@
 #include "core/item.h"
 #include <array>
 
+class BinaryWriter;
+class BinaryReader;
+
 // Player inventory: 36 slots (9 hotbar + 27 main) + 4 armor + 1 offhand
 class Inventory {
 public:
@@ -31,8 +34,19 @@ public:
     // Returns true if an item was consumed.
     bool consumeHeldItem(uint16_t count = 1);
 
+    // Remove `count` items of a given ItemId from anywhere in the inventory.
+    // Returns the number actually removed (may be less if not enough stock).
+    uint16_t consumeItem(ItemId id, uint16_t count);
+
+    // Count total items of a given id across all slots.
+    uint16_t countItem(ItemId id) const;
+
     // Clear all slots
     void clear();
+
+    // Serialization
+    void serialize(BinaryWriter& w) const;
+    void deserialize(BinaryReader& r);
 
 private:
     std::array<ItemStack, TOTAL_SLOTS> slots_{};

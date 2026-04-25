@@ -13,12 +13,59 @@ static bool isSolidBlock(const World& world, int x, int y, int z) {
 // So gap of 0.04 is enough.
 static constexpr float COLLISION_GAP = 0.04f;
 
+bool Physics::playerIntersectsBlock(const Player& player, int bx, int by, int bz) {
+    // Player AABB in world units — same convention as update().
+    float halfW = PLAYER_WIDTH * 0.5f;
+    float pxMin = player.position.x - halfW;
+    float pxMax = player.position.x + halfW;
+    float pyMin = player.position.y;
+    float pyMax = player.position.y + PLAYER_HEIGHT;
+    float pzMin = player.position.z - halfW;
+    float pzMax = player.position.z + halfW;
+
+    // Block AABB: integer cell [b, b+1].
+    float blockMinX = static_cast<float>(bx);
+    float blockMinY = static_cast<float>(by);
+    float blockMinZ = static_cast<float>(bz);
+    float blockMaxX = blockMinX + 1.0f;
+    float blockMaxY = blockMinY + 1.0f;
+    float blockMaxZ = blockMinZ + 1.0f;
+
+    // Half-open intervals are fine for discrete block grids; use <= / >= so that
+    // touching exactly (zero-thickness overlap) still counts as a rejection,
+    // mirroring MC which blocks placement even when the player is *standing on*
+    // the target cell.
+    return !(pxMax <= blockMinX || pxMin >= blockMaxX ||
+             pyMax <= blockMinY || pyMin >= blockMaxY ||
+             pzMax <= blockMinZ || pzMin >= blockMaxZ);
+}
+
 void Physics::update(Player& player, const World& world, float dt) {
     dt = std::min(dt, 0.05f);
 
-    // Apply gravity
-    player.velocity.y -= GRAVITY * dt;
-    player.velocity.y = std::max(player.velocity.y, -78.4f);
+    // Check if feet are in water (for swimming physics)
+    int footX = static_cast<int>(std::floor(player.position.x));
+    int footY = static_cast<int>(std::floor(player.position.y));
+    int footZ = static_cast<int>(std::floor(player.position.z));
+    bool feetInWater = BlockRegistry::instance().isLiquid(world.getBlock(footX, footY, footZ));
+
+    if (feetInWater) {
+        // Water physics: reduced gravity, water drag
+        player.velocity.y -= GRAVITY * dt * 0.15f;  // much less gravity in water
+        player.velocity.y = std::max(player.velocity.y, -4.0f);  // slow sink
+
+        // Water drag on all axes
+        player.velocity.x *= 0.85f;
+        player.velocity.z *= 0.85f;
+        player.velocity.y *= 0.90f;
+
+        // Swimming: space key makes player float up (handled by handleTickInput
+        // setting velocity.y positive)
+    } else {
+        // Normal gravity
+        player.velocity.y -= GRAVITY * dt;
+        player.velocity.y = std::max(player.velocity.y, -78.4f);
+    }
 
     player.onGround = false;
     float halfW = PLAYER_WIDTH * 0.5f;
@@ -88,7 +135,25 @@ void Physics::update(Player& player, const World& world, float dt) {
                 player.position.x = static_cast<float>(checkX + 1) + halfW + COLLISION_GAP;
             player.velocity.x = 0;
         } else {
-            player.position.x = newX;
+            // Sneak edge prevention: if sneaking and on ground, check if the new
+            // position would leave us with no solid block underfoot. If so, clamp.
+            if (player.sneaking && player.onGround) {
+                int footY = static_cast<int>(std::floor(player.position.y)) - 1;
+                int newMinX = static_cast<int>(std::floor(newX - halfW));
+                int newMaxX = static_cast<int>(std::floor(newX + halfW));
+                bool hasGround = false;
+                for (int bx = newMinX; bx <= newMaxX && !hasGround; bx++)
+                    for (int bz = minZ; bz <= maxZ && !hasGround; bz++)
+                        if (isSolidBlock(world, bx, footY, bz))
+                            hasGround = true;
+                if (!hasGround) {
+                    player.velocity.x = 0;
+                } else {
+                    player.position.x = newX;
+                }
+            } else {
+                player.position.x = newX;
+            }
         }
     }
 
@@ -117,7 +182,24 @@ void Physics::update(Player& player, const World& world, float dt) {
                 player.position.z = static_cast<float>(checkZ + 1) + halfW + COLLISION_GAP;
             player.velocity.z = 0;
         } else {
-            player.position.z = newZ;
+            // Sneak edge prevention on Z axis
+            if (player.sneaking && player.onGround) {
+                int footY = static_cast<int>(std::floor(player.position.y)) - 1;
+                int newMinZ = static_cast<int>(std::floor(newZ - halfW));
+                int newMaxZ = static_cast<int>(std::floor(newZ + halfW));
+                bool hasGround = false;
+                for (int bx = minX; bx <= maxX && !hasGround; bx++)
+                    for (int bz = newMinZ; bz <= newMaxZ && !hasGround; bz++)
+                        if (isSolidBlock(world, bx, footY, bz))
+                            hasGround = true;
+                if (!hasGround) {
+                    player.velocity.z = 0;
+                } else {
+                    player.position.z = newZ;
+                }
+            } else {
+                player.position.z = newZ;
+            }
         }
     }
 }

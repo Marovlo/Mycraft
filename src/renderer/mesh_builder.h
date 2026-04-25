@@ -25,11 +25,18 @@ public:
     const std::vector<Vertex>& getVertices() const { return vertices_; }
     const std::vector<uint32_t>& getIndices() const { return indices_; }
 
+    // Transparent geometry (water, glass, etc.) — rendered in a separate pass
+    const std::vector<Vertex>& getTransparentVertices() const { return transVertices_; }
+    const std::vector<uint32_t>& getTransparentIndices() const { return transIndices_; }
+
     bool isEmpty() const { return indices_.empty(); }
+    bool isTransparentEmpty() const { return transIndices_.empty(); }
 
 private:
     std::vector<Vertex> vertices_;
     std::vector<uint32_t> indices_;
+    std::vector<Vertex> transVertices_;
+    std::vector<uint32_t> transIndices_;
     const TextureAtlas* atlas_ = nullptr;
 
     // Face geometry for each direction
@@ -39,5 +46,7 @@ private:
 
     static FaceQuad getFaceQuad(Direction dir);
 
-    void addFace(const glm::vec3& blockPos, Direction dir, uint16_t texId);
+    void addFace(const glm::vec3& blockPos, Direction dir, uint16_t texId, float light = 1.0f);
+    void addTransparentFace(const glm::vec3& blockPos, Direction dir, uint16_t texId, float light = 1.0f);
+    void addCrossFaces(const glm::vec3& blockPos, uint16_t texId, float light = 1.0f);
 };

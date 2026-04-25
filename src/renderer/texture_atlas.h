@@ -6,8 +6,12 @@
 #include <unordered_map>
 #include <glm/glm.hpp>
 
-// Manages a 2D texture atlas built from individual tile PNG files.
-// All tiles are packed into a square, power-of-two atlas texture.
+// Manages a 2D texture atlas built from individual tile PNG files,
+// plus procedurally-generated glyph tiles for a minimal bitmap font.
+//
+// Glyph tiles are added as `font_digit_0` ... `font_digit_9` so callers can
+// request them via getTileIndex("font_digit_3") and reuse the existing block
+// atlas descriptor/pipeline (no second texture slot needed).
 
 class TextureAtlas {
 public:

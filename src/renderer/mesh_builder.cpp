@@ -1,5 +1,6 @@
 #include "mesh_builder.h"
 #include "texture_atlas.h"
+#include "world/light_engine.h"
 
 MeshBuilder::FaceQuad MeshBuilder::getFaceQuad(Direction dir) {
     switch (dir) {
@@ -13,27 +14,26 @@ MeshBuilder::FaceQuad MeshBuilder::getFaceQuad(Direction dir) {
     }
 }
 
-void MeshBuilder::addFace(const glm::vec3& blockPos, Direction dir, uint16_t texId) {
+void MeshBuilder::addFace(const glm::vec3& blockPos, Direction dir, uint16_t texId, float light) {
     FaceQuad quad = getFaceQuad(dir);
     glm::vec3 normal = directionNormal(dir);
 
-    // Get 2D UV rect from atlas: {uMin, vMin, uMax, vMax}
     glm::vec4 uvRect(0.0f, 0.0f, 1.0f, 1.0f);
     if (atlas_) {
         uvRect = atlas_->getTileUV(texId);
     }
 
-    glm::vec2 uv0(uvRect.x, uvRect.y);  // top-left
-    glm::vec2 uv1(uvRect.x, uvRect.w);  // bottom-left
-    glm::vec2 uv2(uvRect.z, uvRect.w);  // bottom-right
-    glm::vec2 uv3(uvRect.z, uvRect.y);  // top-right
+    glm::vec2 uv0(uvRect.x, uvRect.y);
+    glm::vec2 uv1(uvRect.x, uvRect.w);
+    glm::vec2 uv2(uvRect.z, uvRect.w);
+    glm::vec2 uv3(uvRect.z, uvRect.y);
 
     uint32_t baseIdx = static_cast<uint32_t>(vertices_.size());
 
-    vertices_.push_back({blockPos + quad.v0, normal, uv0});
-    vertices_.push_back({blockPos + quad.v1, normal, uv1});
-    vertices_.push_back({blockPos + quad.v2, normal, uv2});
-    vertices_.push_back({blockPos + quad.v3, normal, uv3});
+    vertices_.push_back({blockPos + quad.v0, normal, uv0, light});
+    vertices_.push_back({blockPos + quad.v1, normal, uv1, light});
+    vertices_.push_back({blockPos + quad.v2, normal, uv2, light});
+    vertices_.push_back({blockPos + quad.v3, normal, uv3, light});
 
     indices_.push_back(baseIdx + 0);
     indices_.push_back(baseIdx + 1);
@@ -43,9 +43,75 @@ void MeshBuilder::addFace(const glm::vec3& blockPos, Direction dir, uint16_t tex
     indices_.push_back(baseIdx + 3);
 }
 
+void MeshBuilder::addTransparentFace(const glm::vec3& blockPos, Direction dir, uint16_t texId, float light) {
+    FaceQuad quad = getFaceQuad(dir);
+    glm::vec3 normal = directionNormal(dir);
+
+    glm::vec4 uvRect(0.0f, 0.0f, 1.0f, 1.0f);
+    if (atlas_) {
+        uvRect = atlas_->getTileUV(texId);
+    }
+
+    glm::vec2 uv0(uvRect.x, uvRect.y);
+    glm::vec2 uv1(uvRect.x, uvRect.w);
+    glm::vec2 uv2(uvRect.z, uvRect.w);
+    glm::vec2 uv3(uvRect.z, uvRect.y);
+
+    uint32_t baseIdx = static_cast<uint32_t>(transVertices_.size());
+
+    transVertices_.push_back({blockPos + quad.v0, normal, uv0, light});
+    transVertices_.push_back({blockPos + quad.v1, normal, uv1, light});
+    transVertices_.push_back({blockPos + quad.v2, normal, uv2, light});
+    transVertices_.push_back({blockPos + quad.v3, normal, uv3, light});
+
+    transIndices_.push_back(baseIdx + 0);
+    transIndices_.push_back(baseIdx + 1);
+    transIndices_.push_back(baseIdx + 2);
+    transIndices_.push_back(baseIdx + 0);
+    transIndices_.push_back(baseIdx + 2);
+    transIndices_.push_back(baseIdx + 3);
+}
+
+void MeshBuilder::addCrossFaces(const glm::vec3& blockPos, uint16_t texId, float light) {
+    glm::vec4 uvRect(0.0f, 0.0f, 1.0f, 1.0f);
+    if (atlas_) uvRect = atlas_->getTileUV(texId);
+    glm::vec2 uv0(uvRect.x, uvRect.y);
+    glm::vec2 uv1(uvRect.x, uvRect.w);
+    glm::vec2 uv2(uvRect.z, uvRect.w);
+    glm::vec2 uv3(uvRect.z, uvRect.y);
+
+    float p = 0.15f;
+    glm::vec3 n(0, 1, 0);
+
+    {
+        uint32_t base = static_cast<uint32_t>(vertices_.size());
+        vertices_.push_back({blockPos + glm::vec3(p,   0, p),   n, uv1, light});
+        vertices_.push_back({blockPos + glm::vec3(p,   1, p),   n, uv0, light});
+        vertices_.push_back({blockPos + glm::vec3(1-p, 1, 1-p), n, uv3, light});
+        vertices_.push_back({blockPos + glm::vec3(1-p, 0, 1-p), n, uv2, light});
+        indices_.push_back(base); indices_.push_back(base+1); indices_.push_back(base+2);
+        indices_.push_back(base); indices_.push_back(base+2); indices_.push_back(base+3);
+        indices_.push_back(base); indices_.push_back(base+2); indices_.push_back(base+1);
+        indices_.push_back(base); indices_.push_back(base+3); indices_.push_back(base+2);
+    }
+    {
+        uint32_t base = static_cast<uint32_t>(vertices_.size());
+        vertices_.push_back({blockPos + glm::vec3(1-p, 0, p),   n, uv1, light});
+        vertices_.push_back({blockPos + glm::vec3(1-p, 1, p),   n, uv0, light});
+        vertices_.push_back({blockPos + glm::vec3(p,   1, 1-p), n, uv3, light});
+        vertices_.push_back({blockPos + glm::vec3(p,   0, 1-p), n, uv2, light});
+        indices_.push_back(base); indices_.push_back(base+1); indices_.push_back(base+2);
+        indices_.push_back(base); indices_.push_back(base+2); indices_.push_back(base+3);
+        indices_.push_back(base); indices_.push_back(base+2); indices_.push_back(base+1);
+        indices_.push_back(base); indices_.push_back(base+3); indices_.push_back(base+2);
+    }
+}
+
 void MeshBuilder::build(const World& world, const Chunk& chunk) {
     vertices_.clear();
     indices_.clear();
+    transVertices_.clear();
+    transIndices_.clear();
 
     vertices_.reserve(4096 * 4);
     indices_.reserve(4096 * 6);
@@ -66,6 +132,14 @@ void MeshBuilder::build(const World& world, const Chunk& chunk) {
                 glm::vec3 blockPos(static_cast<float>(wx),
                                    static_cast<float>(y),
                                    static_cast<float>(wz));
+
+                // Cross-rendered blocks (flowers, grass): two diagonal faces, always visible
+                if (props.renderType == BlockRenderType::Cross) {
+                    uint16_t texId = props.textures.top;
+                    uint8_t lightLvl = LightEngine::getLight(world, wx, y, wz);
+                    addCrossFaces(blockPos, texId, LightEngine::lightToFloat(lightLvl));
+                    continue;
+                }
 
                 for (int d = 0; d < static_cast<int>(Direction::COUNT); d++) {
                     Direction dir = static_cast<Direction>(d);
@@ -99,7 +173,22 @@ void MeshBuilder::build(const World& world, const Chunk& chunk) {
 
                     if (shouldRender) {
                         uint16_t texId = props.textures.forDirection(dir);
-                        addFace(blockPos, dir, texId);
+                        // Light at the neighbor position (the air/transparent block the face borders)
+                        int nlx = wx + offset.x;
+                        int nly = y + offset.y;
+                        int nlz = wz + offset.z;
+                        uint8_t lightLvl = LightEngine::getLight(world, nlx, nly, nlz);
+                        float lightF = LightEngine::lightToFloat(lightLvl);
+
+                        // Route transparent blocks (water, glass) to the transparent mesh
+                        if (props.renderType == BlockRenderType::Liquid) {
+                            // Encode water: light = -(actualLight + 2.0) so shader detects it
+                            addTransparentFace(blockPos, dir, texId, -(lightF + 2.0f));
+                        } else if (props.renderType == BlockRenderType::Transparent) {
+                            addTransparentFace(blockPos, dir, texId, lightF);
+                        } else {
+                            addFace(blockPos, dir, texId, lightF);
+                        }
                     }
                 }
             }

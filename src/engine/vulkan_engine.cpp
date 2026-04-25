@@ -22,11 +22,12 @@ VkVertexInputBindingDescription Vertex::getBindingDescription() {
     return desc;
 }
 
-std::array<VkVertexInputAttributeDescription, 3> Vertex::getAttributeDescriptions() {
-    std::array<VkVertexInputAttributeDescription, 3> attrs{};
+std::array<VkVertexInputAttributeDescription, 4> Vertex::getAttributeDescriptions() {
+    std::array<VkVertexInputAttributeDescription, 4> attrs{};
     attrs[0] = {0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(Vertex, position)};
     attrs[1] = {1, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(Vertex, normal)};
     attrs[2] = {2, 0, VK_FORMAT_R32G32_SFLOAT, offsetof(Vertex, texCoord)};
+    attrs[3] = {3, 0, VK_FORMAT_R32_SFLOAT, offsetof(Vertex, light)};
     return attrs;
 }
 
@@ -457,6 +458,80 @@ void VulkanEngine::createGraphicsPipeline() {
         vkDestroyPipeline(device_, graphicsPipeline_, nullptr);
         vkDestroyPipelineLayout(device_, pipelineLayout_, nullptr);
     });
+
+    // --- Transparent pipeline (same shaders, same layout, but alpha blend + no depth write) ---
+    {
+        // Re-create shader modules (the previous ones were destroyed)
+        auto vertModule2 = createShaderModule(std::string(SHADER_DIR) + "/basic.vert.spv");
+        auto fragModule2 = createShaderModule(std::string(SHADER_DIR) + "/basic.frag.spv");
+
+        VkPipelineShaderStageCreateInfo vertStage2{VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO};
+        vertStage2.stage = VK_SHADER_STAGE_VERTEX_BIT;
+        vertStage2.module = vertModule2;
+        vertStage2.pName = "main";
+
+        VkPipelineShaderStageCreateInfo fragStage2{VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO};
+        fragStage2.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+        fragStage2.module = fragModule2;
+        fragStage2.pName = "main";
+
+        VkPipelineShaderStageCreateInfo stages2[] = {vertStage2, fragStage2};
+
+        // Depth: test ON, write OFF (transparent objects must not occlude each other)
+        VkPipelineDepthStencilStateCreateInfo transDepth{VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO};
+        transDepth.depthTestEnable = VK_TRUE;
+        transDepth.depthWriteEnable = VK_FALSE;
+        transDepth.depthCompareOp = VK_COMPARE_OP_LESS;
+
+        // Alpha blending: src*srcAlpha + dst*(1-srcAlpha)
+        VkPipelineColorBlendAttachmentState transBlend{};
+        transBlend.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+                                    VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+        transBlend.blendEnable = VK_TRUE;
+        transBlend.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+        transBlend.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+        transBlend.colorBlendOp = VK_BLEND_OP_ADD;
+        transBlend.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+        transBlend.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+        transBlend.alphaBlendOp = VK_BLEND_OP_ADD;
+
+        VkPipelineColorBlendStateCreateInfo transColorBlend{VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
+        transColorBlend.attachmentCount = 1;
+        transColorBlend.pAttachments = &transBlend;
+
+        // No backface culling for transparent geometry (water visible from both sides)
+        VkPipelineRasterizationStateCreateInfo transRaster{VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO};
+        transRaster.polygonMode = VK_POLYGON_MODE_FILL;
+        transRaster.lineWidth = 1.0f;
+        transRaster.cullMode = VK_CULL_MODE_NONE;
+        transRaster.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+
+        VkGraphicsPipelineCreateInfo transPipelineInfo{VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
+        transPipelineInfo.stageCount = 2;
+        transPipelineInfo.pStages = stages2;
+        transPipelineInfo.pVertexInputState = &vertexInput;
+        transPipelineInfo.pInputAssemblyState = &inputAssembly;
+        transPipelineInfo.pViewportState = &viewportState;
+        transPipelineInfo.pRasterizationState = &transRaster;
+        transPipelineInfo.pMultisampleState = &multisampling;
+        transPipelineInfo.pDepthStencilState = &transDepth;
+        transPipelineInfo.pColorBlendState = &transColorBlend;
+        transPipelineInfo.pDynamicState = &dynamicState;
+        transPipelineInfo.layout = pipelineLayout_;
+        transPipelineInfo.renderPass = renderPass_;
+        transPipelineInfo.subpass = 0;
+
+        if (vkCreateGraphicsPipelines(device_, VK_NULL_HANDLE, 1, &transPipelineInfo, nullptr, &transparentPipeline_) != VK_SUCCESS) {
+            throw std::runtime_error("Failed to create transparent pipeline");
+        }
+
+        vkDestroyShaderModule(device_, vertModule2, nullptr);
+        vkDestroyShaderModule(device_, fragModule2, nullptr);
+
+        mainDeletionQueue_.push([this]() {
+            vkDestroyPipeline(device_, transparentPipeline_, nullptr);
+        });
+    }
 }
 
 void VulkanEngine::createUIPipeline() {
@@ -1063,7 +1138,7 @@ void VulkanEngine::drawFrame() {
     vkBeginCommandBuffer(frame.commandBuffer, &beginInfo);
 
     std::array<VkClearValue, 2> clearValues{};
-    clearValues[0].color = {{0.53f, 0.81f, 0.92f, 1.0f}}; // Sky blue
+    clearValues[0].color = {{clearColor_.r, clearColor_.g, clearColor_.b, clearColor_.a}};
     clearValues[1].depthStencil = {1.0f, 0};
 
     VkRenderPassBeginInfo rpBegin{VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};

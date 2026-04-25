@@ -1,5 +1,6 @@
 #include "player.h"
 #include "world/world.h"
+#include "core/serialization.h"
 #include <cmath>
 #include <algorithm>
 
@@ -43,6 +44,96 @@ void Player::look(double deltaX, double deltaY) {
     yaw   += static_cast<float>(deltaX) * sensitivity;
     pitch -= static_cast<float>(deltaY) * sensitivity;
     pitch  = std::clamp(pitch, -89.0f, 89.0f);
+}
+
+int Player::takeDamage(int amount) {
+    if (dead || amount <= 0) return 0;
+    int actual = std::min(amount, hp);
+    hp -= actual;
+    hurtTicks = 10;  // 0.5 seconds of screen shake
+    if (hp <= 0) { hp = 0; dead = true; }
+    return actual;
+}
+
+void Player::respawn() {
+    position = spawnPoint;
+    velocity = glm::vec3(0.0f);
+    hp = maxHp;
+    hunger = maxHunger;
+    saturation = 5.0f;
+    hungerTickTimer = 0;
+    dead = false;
+    fallStartY = spawnPoint.y;
+    wasFalling = false;
+    onGround = false;
+    eatingTicks = 0;
+    isEating = false;
+}
+
+void Player::serialize(BinaryWriter& w) const {
+    // Position
+    w.writeF32(position.x);
+    w.writeF32(position.y);
+    w.writeF32(position.z);
+
+    // View angles
+    w.writeF32(yaw);
+    w.writeF32(pitch);
+
+    // Health
+    w.writeI32(hp);
+    w.writeI32(maxHp);
+
+    // Hunger
+    w.writeI32(hunger);
+    w.writeI32(maxHunger);
+    w.writeF32(saturation);
+
+    // Breathing
+    w.writeI32(air);
+
+    // Spawn point
+    w.writeF32(spawnPoint.x);
+    w.writeF32(spawnPoint.y);
+    w.writeF32(spawnPoint.z);
+}
+
+void Player::deserialize(BinaryReader& r) {
+    // Position
+    position.x = r.readF32();
+    position.y = r.readF32();
+    position.z = r.readF32();
+
+    // View angles
+    yaw   = r.readF32();
+    pitch = r.readF32();
+
+    // Health
+    hp    = r.readI32();
+    maxHp = r.readI32();
+
+    // Hunger
+    hunger    = r.readI32();
+    maxHunger = r.readI32();
+    saturation = r.readF32();
+
+    // Breathing
+    air = r.readI32();
+
+    // Spawn point
+    spawnPoint.x = r.readF32();
+    spawnPoint.y = r.readF32();
+    spawnPoint.z = r.readF32();
+
+    // Reset transient state
+    velocity = glm::vec3(0.0f);
+    dead = (hp <= 0);
+    fallStartY = position.y;
+    wasFalling = false;
+    eatingTicks = 0;
+    isEating = false;
+    hurtTicks = 0;
+    attackCooldownTicks = 0;
 }
 
 // ========== Raycasting (DDA algorithm) ==========

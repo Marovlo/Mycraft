@@ -5,18 +5,24 @@
 #include "renderer/texture_atlas.h"
 #include "player/inventory.h"
 
+// HUD enqueues 2D quads + projected block icons into a single UIRenderer batch.
+// Render order is: slot background → selection border → icon (per slot) → crosshair.
+// All draws share the block-atlas texture, so they fit one descriptor / one draw call.
 class HUD {
 public:
     void init(UIRenderer* ui, BlockModelRenderer* blockModel,
               TextureAtlas* atlas, VulkanEngine* engine);
 
-    // Draw HUD backgrounds (crosshair, hotbar slots). Call before render3D.
-    void drawBackgrounds(float screenW, float screenH, const Inventory& inventory);
-
-    // Render 3D block icons in hotbar slots. Call during 3D render pass.
-    void render3DIcons(VkCommandBuffer cmd, float screenW, float screenH,
-                       const Inventory& inventory,
-                       uint32_t fullW, uint32_t fullH);
+    // Queue every HUD element for this frame. UIRenderer::flush() will draw them later.
+    // breakProgress: 0..1, < 0 means "no active mining" (no bar drawn).
+    // gameTicks: total ticks since start, used for viewmodel swing animation.
+    // hp / maxHp: player health for heart display.
+    // isDead: show death overlay.
+    void draw(float screenW, float screenH, const Inventory& inventory,
+              float breakProgress, int gameTicks,
+              int hp, int maxHp, int hunger, int maxHunger, bool isDead,
+              bool isEating = false, int air = 300, int maxAir = 300,
+              int hurtTicks = 0);
 
 private:
     UIRenderer* ui_ = nullptr;
@@ -24,13 +30,19 @@ private:
     TextureAtlas* atlas_ = nullptr;
     VulkanEngine* engine_ = nullptr;
 
-    // Hotbar layout constants
-    static constexpr float SLOT_SIZE = 64.0f;
-    static constexpr float GAP = 4.0f;
-    static constexpr float BORDER = 1.5f;
-    static constexpr float BOTTOM_MARGIN = 12.0f;
-    static constexpr float ICON_PAD = 6.0f;
+    // Hotbar layout constants in *base* (unscaled) pixels.
+    // Final pixel sizes are multiplied by getGuiScale(screenH) so the HUD
+    // looks correct on Retina / high-DPI framebuffers.
+    static constexpr float SLOT_SIZE     = 20.0f;
+    static constexpr float GAP           = 2.0f;
+    static constexpr float BORDER        = 1.0f;
+    static constexpr float BOTTOM_MARGIN = 8.0f;
+    static constexpr float ICON_PAD      = 2.0f;
 
-    float getHotbarStartX(float screenW) const;
-    float getHotbarStartY(float screenH) const;
+    // Auto GUI scale, MC-style: 1× per ~240 px of screen height, clamped to [2,4].
+    // This keeps the HUD visually consistent across 720p ↔ 4K framebuffers.
+    static int getGuiScale(float screenH);
+
+    float getHotbarStartX(float screenW, int scale) const;
+    float getHotbarStartY(float screenH, int scale) const;
 };

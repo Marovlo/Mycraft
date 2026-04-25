@@ -66,6 +66,134 @@ void UIRenderer::drawCrosshair(float screenW, float screenH, float size, float t
     drawRect(cx - ht, cy - hs, thickness, size, color);
 }
 
+void UIRenderer::drawTexturedTri(const UIVertex& a, const UIVertex& b, const UIVertex& c) {
+    uint32_t base = static_cast<uint32_t>(vertices_.size());
+    vertices_.push_back(a);
+    vertices_.push_back(b);
+    vertices_.push_back(c);
+    indices_.push_back(base + 0);
+    indices_.push_back(base + 1);
+    indices_.push_back(base + 2);
+}
+
+void UIRenderer::drawNumber(int value, float rightX, float y, float glyphH,
+                            const glm::vec4& color) {
+    if (!atlas_) return;
+    if (value < 0) value = 0;
+
+    // Extract digits least-significant-first, then render right-to-left so we
+    // can walk from rightX leftward without allocating a buffer.
+    // Glyph aspect: 5x7 source → width ≈ glyphH * 5/7, but for readable tight
+    // MC-style digits we simplify to width = glyphH * 0.6 and pack 1-px apart.
+    float glyphW  = glyphH * 0.6f;
+    float advance = glyphW + glyphH * 0.1f;     // small gap between digits
+
+    // Build the digit sequence.
+    int digits[10];
+    int nDigits = 0;
+    if (value == 0) {
+        digits[nDigits++] = 0;
+    } else {
+        int v = value;
+        while (v > 0 && nDigits < 10) {
+            digits[nDigits++] = v % 10;
+            v /= 10;
+        }
+    }
+
+    // Drop shadow first (black, 1-px offset) to match MC look.
+    float shadow = glyphH * 0.1f;
+    glm::vec4 shadowColor(0.0f, 0.0f, 0.0f, color.a);
+
+    auto drawDigit = [&](int d, float x, float yy, const glm::vec4& tint) {
+        uint16_t tile = atlas_->getTileIndex("font_digit_" + std::to_string(d));
+        glm::vec4 uv  = atlas_->getTileUV(tile);
+        drawTexturedRect(x, yy, glyphW, glyphH, uv.x, uv.y, uv.z, uv.w, tint);
+    };
+
+    float cursor = rightX;
+    for (int i = 0; i < nDigits; ++i) {
+        int d = digits[i];               // least-significant first
+        cursor -= glyphW;
+        drawDigit(d, cursor + shadow, y + shadow, shadowColor);
+        drawDigit(d, cursor,          y,          color);
+        cursor -= (advance - glyphW);
+    }
+}
+
+void UIRenderer::drawText(const std::string& text, float centerX, float y, float glyphH,
+                          const glm::vec4& color) {
+    if (!atlas_ || text.empty()) return;
+
+    float glyphW  = glyphH * 0.6f;
+    float advance = glyphW + glyphH * 0.1f;
+    float totalW  = text.size() * advance - glyphH * 0.1f;
+    float startX  = centerX - totalW * 0.5f;
+
+    float shadow = glyphH * 0.1f;
+    glm::vec4 shadowColor(0.0f, 0.0f, 0.0f, color.a);
+
+    auto drawGlyph = [&](const std::string& tileName, float x, float yy, const glm::vec4& tint) {
+        uint16_t tile = atlas_->getTileIndex(tileName);
+        glm::vec4 uv = atlas_->getTileUV(tile);
+        drawTexturedRect(x, yy, glyphW, glyphH, uv.x, uv.y, uv.z, uv.w, tint);
+    };
+
+    float cx = startX;
+    for (char ch : text) {
+        std::string tileName;
+        if (ch >= 'A' && ch <= 'Z') {
+            tileName = std::string("font_letter_") + static_cast<char>(ch - 'A' + 'a');
+        } else if (ch >= 'a' && ch <= 'z') {
+            tileName = std::string("font_letter_") + ch;
+        } else if (ch >= '0' && ch <= '9') {
+            tileName = std::string("font_digit_") + ch;
+        } else {
+            // Space or unknown — skip
+            cx += advance;
+            continue;
+        }
+        drawGlyph(tileName, cx + shadow, y + shadow, shadowColor);
+        drawGlyph(tileName, cx, y, color);
+        cx += advance;
+    }
+}
+
+void UIRenderer::drawTextLeft(const std::string& text, float leftX, float y, float glyphH,
+                              const glm::vec4& color) {
+    if (!atlas_ || text.empty()) return;
+
+    float glyphW  = glyphH * 0.6f;
+    float advance = glyphW + glyphH * 0.1f;
+
+    float shadow = glyphH * 0.1f;
+    glm::vec4 shadowColor(0.0f, 0.0f, 0.0f, color.a);
+
+    auto drawGlyph = [&](const std::string& tileName, float x, float yy, const glm::vec4& tint) {
+        uint16_t tile = atlas_->getTileIndex(tileName);
+        glm::vec4 uv = atlas_->getTileUV(tile);
+        drawTexturedRect(x, yy, glyphW, glyphH, uv.x, uv.y, uv.z, uv.w, tint);
+    };
+
+    float cx = leftX;
+    for (char ch : text) {
+        std::string tileName;
+        if (ch >= 'A' && ch <= 'Z') {
+            tileName = std::string("font_letter_") + static_cast<char>(ch - 'A' + 'a');
+        } else if (ch >= 'a' && ch <= 'z') {
+            tileName = std::string("font_letter_") + ch;
+        } else if (ch >= '0' && ch <= '9') {
+            tileName = std::string("font_digit_") + ch;
+        } else {
+            cx += advance;
+            continue;
+        }
+        drawGlyph(tileName, cx + shadow, y + shadow, shadowColor);
+        drawGlyph(tileName, cx, y, color);
+        cx += advance;
+    }
+}
+
 void UIRenderer::ensureBufferCapacity() {
     VkDeviceSize neededVB = sizeof(UIVertex) * vertices_.size();
     VkDeviceSize neededIB = sizeof(uint32_t) * indices_.size();

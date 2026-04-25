@@ -21,17 +21,42 @@ public:
     void generate(Chunk& chunk) override;
     void setSeed(int seed) override;
 
+    int getTerrainHeight(int wx, int wz) const;
+
+    // Biome system
+    enum class Biome : uint8_t { Plains, Forest, Desert, Snowy };
+    Biome getBiome(int wx, int wz) const;
+
 private:
     int seed_;
-    FastNoiseLite continentNoise_;    // Large-scale landmass shape
-    FastNoiseLite erosionNoise_;      // Medium-scale terrain variation
-    FastNoiseLite detailNoise_;       // Small-scale roughness
-    FastNoiseLite treeNoise_;         // Tree placement
+    FastNoiseLite continentNoise_;
+    FastNoiseLite erosionNoise_;
+    FastNoiseLite detailNoise_;
+    FastNoiseLite treeNoise_;
+    FastNoiseLite caveNoise_;       // 3D noise for cave carving
+    FastNoiseLite caveNoise2_;      // Second octave for larger caves
+    FastNoiseLite temperatureNoise_;
+    FastNoiseLite humidityNoise_;
 
     void initNoise();
 
-    int getTerrainHeight(int wx, int wz) const;
     void generateTerrain(Chunk& chunk);
+    void generateCaves(Chunk& chunk);
+    void generateOres(Chunk& chunk);
     void generateTrees(Chunk& chunk);
+    void generateVegetation(Chunk& chunk);
     void generateBedrock(Chunk& chunk);
+
+    // Ore vein generation config
+    struct OreConfig {
+        BlockId blockId;
+        int minY, maxY;     // Y range (inclusive)
+        int veinSize;       // max blocks per vein
+        int veinsPerChunk;  // attempts per chunk
+    };
+    static const OreConfig kOreConfigs[];
+    static const int kOreConfigCount;
+
+    // Generate a single ore vein centered at (cx, cy, cz) within the chunk.
+    void placeVein(Chunk& chunk, const OreConfig& cfg, int cx, int cy, int cz) const;
 };

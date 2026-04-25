@@ -1,4 +1,5 @@
 #include "inventory.h"
+#include "core/serialization.h"
 
 uint16_t Inventory::addItem(ItemStack stack) {
     if (stack.isEmpty()) return 0;
@@ -42,4 +43,45 @@ bool Inventory::consumeHeldItem(uint16_t count) {
 
 void Inventory::clear() {
     for (auto& slot : slots_) slot.clear();
+}
+
+uint16_t Inventory::countItem(ItemId id) const {
+    uint16_t total = 0;
+    for (const auto& s : slots_) {
+        if (s.id == id) total += s.count;
+    }
+    return total;
+}
+
+uint16_t Inventory::consumeItem(ItemId id, uint16_t count) {
+    uint16_t removed = 0;
+    for (auto& s : slots_) {
+        if (s.id != id) continue;
+        uint16_t take = std::min(s.count, static_cast<uint16_t>(count - removed));
+        s.count -= take;
+        if (s.count == 0) s.clear();
+        removed += take;
+        if (removed >= count) break;
+    }
+    return removed;
+}
+
+void Inventory::serialize(BinaryWriter& w) const {
+    w.writeU8(static_cast<uint8_t>(selectedSlot_));
+    for (int i = 0; i < TOTAL_SLOTS; ++i) {
+        const auto& s = slots_[i];
+        w.writeU16(s.id);
+        w.writeU16(s.count);
+        w.writeU16(s.durability);
+    }
+}
+
+void Inventory::deserialize(BinaryReader& r) {
+    selectedSlot_ = static_cast<int>(r.readU8()) % HOTBAR_SIZE;
+    for (int i = 0; i < TOTAL_SLOTS; ++i) {
+        auto& s = slots_[i];
+        s.id         = r.readU16();
+        s.count      = r.readU16();
+        s.durability = r.readU16();
+    }
 }

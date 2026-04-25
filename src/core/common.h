@@ -24,6 +24,8 @@ constexpr float PLAYER_EYE_HEIGHT = 1.62f; // Eye offset from feet, same as MC
 constexpr float PLAYER_WIDTH  = 0.6f;     // Full width (MC is 0.6)
 constexpr float MOVE_SPEED    = 4.317f;   // MC walking speed in blocks/sec
 constexpr float SPRINT_SPEED  = 5.612f;   // MC sprinting speed
+constexpr float SNEAK_SPEED   = 1.295f;   // MC sneaking speed (~30% of walk)
+constexpr float SNEAK_EYE_HEIGHT = 1.50f; // Slightly lower eye when sneaking
 constexpr float MAX_REACH     = 6.0f;     // Block interaction range (MC survival=4.5, creative=5, ours=6 for comfort)
 
 // ========== Coordinate utilities ==========
