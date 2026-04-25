@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ============================================================================
-# VoxelCraft — One-click dependency installer
+# Mycraft — One-click dependency installer
 # Supports: macOS (Homebrew), Ubuntu/Debian (apt), Fedora (dnf), Arch (pacman)
 # ============================================================================
 set -euo pipefail
@@ -171,7 +171,7 @@ verify() {
 # ---------- Main ----------
 main() {
     echo "============================================"
-    echo "  VoxelCraft — Dependency Setup"
+echo "  Mycraft — Dependency Setup"
     echo "============================================"
     echo ""
 

@@ -5,11 +5,11 @@
 #include <vector>
 #include <fstream>
 
-// ========== VoxelCraft Binary File Header ==========
-// All VoxelCraft data files start with this 8-byte header.
+// ========== Mycraft Binary File Header ==========
+// All Mycraft data files start with this 8-byte header.
 
 namespace VCFile {
-    // Magic: "VCFT" (VoxelCraft File)
+// Magic: "VCFT" (Mycraft File)
     constexpr uint32_t MAGIC = 0x54464356;  // "VCFT" in little-endian
 
     // File types
@@ -49,7 +49,7 @@ public:
 
     bool isValid() const { return useBuffer_ || (stream_.is_open() && stream_.good()); }
 
-    // Write the standard VoxelCraft file header
+// Write the standard Mycraft file header
     void writeHeader(VCFile::Type type, uint16_t version);
 
     // Primitive writers (all little-endian — native on x86/ARM)
@@ -110,7 +110,7 @@ public:
     bool isValid() const { return valid_; }
     bool eof() const;
 
-    // Read and validate the standard VoxelCraft file header.
+// Read and validate the standard Mycraft file header.
     // Returns true if magic matches and version <= maxVersion.
     // On success, fills outType and outVersion.
     bool readHeader(VCFile::Type expectedType, uint16_t maxVersion,

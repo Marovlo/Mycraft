@@ -124,7 +124,7 @@ void Game::init() {
     RecipeRegistry::instance().registerDefaults();
     SmeltingRegistry::instance().registerDefaults();
 
-    if (!engine_.init(1280, 720, "VoxelCraft")) {
+    if (!engine_.init(1280, 720, "Mycraft")) {
         throw std::runtime_error("Failed to init engine");
     }
 

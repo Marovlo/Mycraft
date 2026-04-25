@@ -1,4 +1,4 @@
-# VoxelCraft 功能开发路线图
+# Mycraft 功能开发路线图
 
 > 本文档对标原版 Minecraft Java Edition，按**开发优先级**排序。  
 > 每个功能标注 `[已完成]` `[部分完成]` `[未开始]` 状态。  

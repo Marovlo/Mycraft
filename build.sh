@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ============================================================================
-# VoxelCraft — One-click build & run
+# Mycraft — One-click build & run
 # Usage:
 #   ./build.sh                  Build (Release) and run
 #   ./build.sh --debug          Build with CMAKE_BUILD_TYPE=Debug (symbols, no opt)
@@ -125,7 +125,7 @@ build() {
 
 # ---------- Run ----------
 run() {
-    local exe="${BUILD_DIR}/VoxelEngine"
+local exe="${BUILD_DIR}/Mycraft"
 
     if [ ! -f "$exe" ]; then
         fail "Executable not found at ${exe}. Build first with: ./build.sh --build"
@@ -134,23 +134,23 @@ run() {
     setup_vulkan_env
 
     echo ""
-    ok "Launching VoxelCraft..."
+ok "Launching Mycraft..."
     if [ ${#EXTRA_RUN_ARGS[@]} -gt 0 ]; then
         info "Runtime args: ${EXTRA_RUN_ARGS[*]}"
         echo "────────────────────────────────────────"
         cd "$BUILD_DIR"
-        exec ./VoxelEngine "${EXTRA_RUN_ARGS[@]}"
+exec ./Mycraft "${EXTRA_RUN_ARGS[@]}"
     else
         echo "────────────────────────────────────────"
         cd "$BUILD_DIR"
-        exec ./VoxelEngine
+exec ./Mycraft
     fi
 }
 
 # ---------- Main ----------
 main() {
     echo "============================================"
-    echo "  VoxelCraft — Build & Run"
+echo "  Mycraft — Build & Run"
     echo "============================================"
     echo ""
 

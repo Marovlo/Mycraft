@@ -44,7 +44,7 @@ class BinaryReader {
 
 **文件头格式**：
 ```
-[4 bytes] Magic: "VCFT" (VoxelCraft File)
+[4 bytes] Magic: "VCFT" (Mycraft File)
 [2 bytes] Format version (uint16_t)
 [2 bytes] File type (0=level, 1=region, 2=player)
 ```

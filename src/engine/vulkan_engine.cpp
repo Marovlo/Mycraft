@@ -99,7 +99,7 @@ void VulkanEngine::initVulkan() {
     // Instance
     vkb::InstanceBuilder instBuilder(fp);
     auto instResult = instBuilder
-        .set_app_name("VoxelEngine")
+        .set_app_name("Mycraft")
         .request_validation_layers(false)
         .require_api_version(1, 2, 0)
 #ifdef __APPLE__
