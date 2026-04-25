@@ -17,6 +17,9 @@
 Game::Game() = default;
 
 Game::~Game() {
+    // Shutdown thread pool before cleanup (wait for in-flight tasks)
+    chunkTaskMgr_.shutdown();
+
     // Save all data before cleanup
     saveAll();
 
@@ -161,6 +164,10 @@ void Game::init() {
     chestScreen_.init(&uiRenderer_, &blockModel_, &textureAtlas_, &engine_);
 
     registerBlockInteractions();
+
+    // 初始化多线程区块任务管理器
+    // numThreads=0 表示自动检测（物理核心数-1，至少2）
+    chunkTaskMgr_.init(0, terrainGen_.get(), &saveManager_, &textureAtlas_);
 
     // Try loading player data from existing save
     bool playerLoaded = false;
@@ -356,6 +363,12 @@ void Game::update(float dt) {
 
     input_.update();
     input_.postUpdate();
+
+    // 每帧轮询异步区块生成和 mesh 构建结果（不仅仅在 tick 时）
+    // 这确保工作线程完成的任务能尽快被主线程处理
+    pollChunkGenResults();
+    submitPendingMeshTasks();
+    pollMeshResults();
 
     buildMeshes();
 
@@ -1100,6 +1113,7 @@ void Game::handleTickInput() {
 // ============================================================
 
 void Game::updateChunks() {
+    // Phase 1: 发现需要加载的区块，提交到工作线程
     for (int dx = -RENDER_DISTANCE; dx <= RENDER_DISTANCE; dx++) {
         for (int dz = -RENDER_DISTANCE; dz <= RENDER_DISTANCE; dz++) {
             if (dx * dx + dz * dz > RENDER_DISTANCE * RENDER_DISTANCE) continue;
@@ -1107,31 +1121,132 @@ void Game::updateChunks() {
             int cx = playerChunkX_ + dx, cz = playerChunkZ_ + dz;
             auto& chunk = world_.getOrCreateChunk(cx, cz);
 
-            if (!chunk.hasData()) {
-                // Try loading from disk first (modified chunks saved previously)
-                bool loaded = saveManager_.loadChunk(cx, cz, chunk);
-                if (loaded) {
-                    // Recompute lighting (not persisted)
-                    chunk.updateHeightMap();
-                    LightEngine::initSkyLight(chunk);
-                    LightEngine::initBlockLight(chunk);
-                } else {
-                    // Generate from seed
-                    terrainGen_->generate(chunk);
-                }
-                world_.markChunkDirty(cx - 1, cz);
-                world_.markChunkDirty(cx + 1, cz);
-                world_.markChunkDirty(cx, cz - 1);
-                world_.markChunkDirty(cx, cz + 1);
+            // 只有 Empty 状态的区块才需要提交生成任务
+            if (chunk.state() == ChunkState::Empty && !chunk.hasData()) {
+                chunkTaskMgr_.submitGenTask(chunk);
             }
         }
+    }
+
+    // Phase 2: 轮询生成完成的结果
+    pollChunkGenResults();
+
+    // Phase 3: 提交需要 mesh 构建的区块
+    submitPendingMeshTasks();
+
+    // Phase 4: 轮询 mesh 构建完成的结果并上传 GPU
+    pollMeshResults();
+}
+
+void Game::pollChunkGenResults() {
+    std::vector<ChunkTaskManager::GenResult> results;
+    chunkTaskMgr_.pollGenResults(results, 16);
+
+    for (auto& r : results) {
+        Chunk* chunk = world_.getChunk(r.cx, r.cz);
+        if (!chunk) continue;
+
+        // 数据已由工作线程直接写入 chunk 对象
+        // 标记邻居 mesh dirty（边界面可能变化）
+        chunk->setState(ChunkState::MeshPending);
+        world_.markChunkDirty(r.cx - 1, r.cz);
+        world_.markChunkDirty(r.cx + 1, r.cz);
+        world_.markChunkDirty(r.cx, r.cz - 1);
+        world_.markChunkDirty(r.cx, r.cz + 1);
+
+        // 从 inflight 集合中移除（生成阶段完成）
+        // 注意：mesh 构建阶段会重新加入 inflight
+    }
+}
+
+void Game::submitPendingMeshTasks() {
+    int submitted = 0;
+    constexpr int MAX_MESH_SUBMITS_PER_TICK = 8;
+
+    for (auto& [key, chunk] : world_.chunks()) {
+        if (submitted >= MAX_MESH_SUBMITS_PER_TICK) break;
+        if (!chunk.isMeshDirty()) continue;
+
+        // 只处理已有数据且不在处理中的区块
+        if (!chunk.hasData()) continue;
+        if (chunk.state() == ChunkState::MeshBuilding ||
+            chunk.state() == ChunkState::Pending ||
+            chunk.state() == ChunkState::Generating ||
+            chunk.state() == ChunkState::DataReady) continue;
+
+        int dx = chunk.chunkX() - playerChunkX_;
+        int dz = chunk.chunkZ() - playerChunkZ_;
+        if (dx * dx + dz * dz > (RENDER_DISTANCE + 1) * (RENDER_DISTANCE + 1)) continue;
+
+        // 检查4个邻居是否都有数据
+        int cx = chunk.chunkX();
+        int cz = chunk.chunkZ();
+        const Chunk* nxp = world_.getChunk(cx + 1, cz);
+        const Chunk* nxn = world_.getChunk(cx - 1, cz);
+        const Chunk* nzp = world_.getChunk(cx, cz + 1);
+        const Chunk* nzn = world_.getChunk(cx, cz - 1);
+        if ((!nxp || !nxp->hasData()) || (!nxn || !nxn->hasData()) ||
+            (!nzp || !nzp->hasData()) || (!nzn || !nzn->hasData())) {
+            continue;
+        }
+
+        chunkTaskMgr_.submitMeshTask(chunk, world_);
+        chunk.clearMeshDirty();
+        ++submitted;
+    }
+}
+
+void Game::pollMeshResults() {
+    std::vector<ChunkTaskManager::MeshResult> results;
+    chunkTaskMgr_.pollMeshResults(results, 8);
+
+    for (auto& r : results) {
+        Chunk* chunk = world_.getChunk(r.cx, r.cz);
+        if (!chunk) continue;
+
+        // 销毁旧 mesh
+        if (chunk->hasMesh()) {
+            engine_.destroyMesh(chunk->getMesh());
+        }
+        if (chunk->hasTransparentMesh()) {
+            engine_.destroyMesh(chunk->getTransparentMesh());
+        }
+
+        // 上传新 mesh 到 GPU（必须在主线程）
+        if (!r.opaqueIndices.empty()) {
+            chunk->setMesh(engine_.uploadMesh(r.opaqueVerts, r.opaqueIndices));
+        } else {
+            chunk->setMesh(Mesh{});
+        }
+
+        if (!r.transIndices.empty()) {
+            chunk->setTransparentMesh(engine_.uploadMesh(r.transVerts, r.transIndices));
+        } else {
+            chunk->setTransparentMesh(Mesh{});
+        }
+
+        chunk->setState(ChunkState::Ready);
     }
 }
 
 void Game::buildMeshes() {
-    int meshBuilds = 0;
+    // 多线程模式下，mesh 构建由 ChunkTaskManager 管理。
+    // 这里只处理需要同步构建的紧急情况（如方块修改后的即时更新）。
+    // 大部分 mesh 构建通过 submitPendingMeshTasks() + pollMeshResults() 异步完成。
+
+    // 同步构建：处理因方块修改（setBlock）触发的 meshDirty 区块
+    // 这些区块需要立即更新以保证视觉一致性
+    int syncBuilds = 0;
+    constexpr int MAX_SYNC_BUILDS = 2;  // 每帧最多同步构建2个（保持帧率）
+
     for (auto& [key, chunk] : world_.chunks()) {
+        if (syncBuilds >= MAX_SYNC_BUILDS) break;
         if (!chunk.isMeshDirty()) continue;
+        if (!chunk.hasData()) continue;
+
+        // 只同步构建 Ready 状态的区块（已经有 mesh，因方块修改需要更新）
+        // 其他状态的区块由异步管线处理
+        if (chunk.state() != ChunkState::Ready) continue;
 
         int dx = chunk.chunkX() - playerChunkX_;
         int dz = chunk.chunkZ() - playerChunkZ_;
@@ -1148,6 +1263,8 @@ void Game::buildMeshes() {
             continue;
         }
 
+        // 方块修改后的即时 mesh 更新仍然同步执行
+        // （保证玩家放置/破坏方块时立即看到效果）
         meshBuilder_.build(world_, chunk);
 
         if (chunk.hasMesh()) {
@@ -1171,7 +1288,7 @@ void Game::buildMeshes() {
         }
         chunk.clearMeshDirty();
 
-        if (++meshBuilds >= 2) break;
+        ++syncBuilds;
     }
 }
 
@@ -1184,6 +1301,13 @@ void Game::unloadDistantChunks() {
         int dx = chunk.chunkX() - playerChunkX_;
         int dz = chunk.chunkZ() - playerChunkZ_;
         if (dx * dx + dz * dz > unloadDistSq) {
+            // 不卸载正在工作线程中处理的区块
+            ChunkState st = chunk.state();
+            if (st == ChunkState::Pending || st == ChunkState::Generating ||
+                st == ChunkState::MeshBuilding) {
+                continue;
+            }
+
             // Save modified chunks before unloading
             if (chunk.isModified()) {
                 saveManager_.saveChunk(chunk);

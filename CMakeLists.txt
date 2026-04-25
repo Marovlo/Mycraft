@@ -124,6 +124,10 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     vk-bootstrap::vk-bootstrap
 )
 
+# macOS 和 Linux 都需要 pthread
+find_package(Threads REQUIRED)
+target_link_libraries(${PROJECT_NAME} PRIVATE Threads::Threads)
+
 add_dependencies(${PROJECT_NAME} shaders)
 
 # Pass shader directory to code

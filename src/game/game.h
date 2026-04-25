@@ -28,6 +28,7 @@
 #include "world/save_manager.h"
 #include "world/chest_manager.h"
 #include "world/furnace_manager.h"
+#include "world/chunk_task_manager.h"
 #include "crafting/smelting_recipe.h"
 
 #include <memory>
@@ -60,6 +61,11 @@ private:
     void unloadDistantChunks();
     void loadTextureAtlas();
 
+    // 多线程区块系统：主线程轮询工作线程结果
+    void pollChunkGenResults();
+    void pollMeshResults();
+    void submitPendingMeshTasks();
+
     // Save/Load
     void saveAll();       // Save player + dirty chunks + level data
     void loadWorld();     // Load level data + player from disk
@@ -82,6 +88,9 @@ private:
     BlockInteraction blockInteraction_;
     EntityManager    entityManager_;
     EntityRenderer   entityRenderer_;
+
+    // 多线程区块任务管理器
+    ChunkTaskManager chunkTaskMgr_;
 
     // Save system
     SaveManager      saveManager_;
