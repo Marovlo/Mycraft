@@ -66,9 +66,21 @@ private:
     void pollMeshResults();
     void submitPendingMeshTasks();
 
+    // 玩家生存系统 tick（game_survival.cpp）
+    void tickFallDamage();
+    void tickVoidDamage();
+    void tickHunger();
+    void tickEating();
+    void tickBreathing();
+
+    // 方块高亮与破坏覆盖层（game_highlight.cpp）
+    void updateBlockHighlight();
+
+    // 调试命令（game_debug.cpp）
+    void handleDebugKeys();
+
     // Save/Load
     void saveAll();       // Save player + dirty chunks + level data
-    void loadWorld();     // Load level data + player from disk
 
     // Register block interaction handlers (crafting table, future: furnace, chest, etc.)
     void registerBlockInteractions();

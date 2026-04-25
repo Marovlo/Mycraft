@@ -108,92 +108,14 @@ void MeshBuilder::addCrossFaces(const glm::vec3& blockPos, uint16_t texId, float
 }
 
 void MeshBuilder::build(const World& world, const Chunk& chunk) {
-    vertices_.clear();
-    indices_.clear();
-    transVertices_.clear();
-    transIndices_.clear();
-
-    vertices_.reserve(4096 * 4);
-    indices_.reserve(4096 * 6);
-
-    const auto& registry = BlockRegistry::instance();
-
-    for (int x = 0; x < CHUNK_SIZE; x++) {
-        for (int y = 0; y < CHUNK_HEIGHT; y++) {
-            for (int z = 0; z < CHUNK_SIZE; z++) {
-                BlockId block = chunk.getBlock(x, y, z);
-                if (registry.isAir(block)) continue;
-
-                const auto& props = registry.get(block);
-                if (props.renderType == BlockRenderType::None) continue;
-
-                int wx = chunk.worldX() + x;
-                int wz = chunk.worldZ() + z;
-                glm::vec3 blockPos(static_cast<float>(wx),
-                                   static_cast<float>(y),
-                                   static_cast<float>(wz));
-
-                // Cross-rendered blocks (flowers, grass): two diagonal faces, always visible
-                if (props.renderType == BlockRenderType::Cross) {
-                    uint16_t texId = props.textures.top;
-                    uint8_t lightLvl = LightEngine::getLight(world, wx, y, wz);
-                    addCrossFaces(blockPos, texId, LightEngine::lightToFloat(lightLvl));
-                    continue;
-                }
-
-                for (int d = 0; d < static_cast<int>(Direction::COUNT); d++) {
-                    Direction dir = static_cast<Direction>(d);
-                    glm::ivec3 offset = directionOffset(dir);
-
-                    int lnx = x + offset.x;
-                    int lny = y + offset.y;
-                    int lnz = z + offset.z;
-
-                    BlockId neighbor;
-                    if (lnx >= 0 && lnx < CHUNK_SIZE &&
-                        lny >= 0 && lny < CHUNK_HEIGHT &&
-                        lnz >= 0 && lnz < CHUNK_SIZE) {
-                        neighbor = chunk.getBlock(lnx, lny, lnz);
-                    } else {
-                        neighbor = world.getBlock(wx + offset.x, y + offset.y, wz + offset.z);
-                    }
-
-                    const auto& neighborProps = registry.get(neighbor);
-
-                    bool shouldRender = false;
-                    if (neighborProps.isAir()) {
-                        shouldRender = true;
-                    } else if (!neighborProps.isOpaque) {
-                        if (props.isLiquid && neighborProps.isLiquid && block == neighbor) {
-                            shouldRender = false;
-                        } else {
-                            shouldRender = true;
-                        }
-                    }
-
-                    if (shouldRender) {
-                        uint16_t texId = props.textures.forDirection(dir);
-                        // Light at the neighbor position (the air/transparent block the face borders)
-                        int nlx = wx + offset.x;
-                        int nly = y + offset.y;
-                        int nlz = wz + offset.z;
-                        uint8_t lightLvl = LightEngine::getLight(world, nlx, nly, nlz);
-                        float lightF = LightEngine::lightToFloat(lightLvl);
-
-                        // Route transparent blocks (water, glass) to the transparent mesh
-                        if (props.renderType == BlockRenderType::Liquid) {
-                            // Encode water: light = -(actualLight + 2.0) so shader detects it
-                            addTransparentFace(blockPos, dir, texId, -(lightF + 2.0f));
-                        } else if (props.renderType == BlockRenderType::Transparent) {
-                            addTransparentFace(blockPos, dir, texId, lightF);
-                        } else {
-                            addFace(blockPos, dir, texId, lightF);
-                        }
-                    }
-                }
-            }
-        }
-    }
+    // 构造 ChunkNeighbors 后委托给线程安全版本，避免代码重复
+    ChunkNeighbors neighbors;
+    neighbors.self = &chunk;
+    neighbors.posX = world.getChunk(chunk.chunkX() + 1, chunk.chunkZ());
+    neighbors.negX = world.getChunk(chunk.chunkX() - 1, chunk.chunkZ());
+    neighbors.posZ = world.getChunk(chunk.chunkX(), chunk.chunkZ() + 1);
+    neighbors.negZ = world.getChunk(chunk.chunkX(), chunk.chunkZ() - 1);
+    build(neighbors);
 }
 
 // ============================================================
