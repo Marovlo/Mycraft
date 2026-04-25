@@ -29,7 +29,10 @@
 #include "world/chest_manager.h"
 #include "world/furnace_manager.h"
 #include "world/chunk_task_manager.h"
+#include "world/day_night_cycle.h"
 #include "crafting/smelting_recipe.h"
+#include "renderer/mob_renderer.h"
+#include "entity/mob_spawner.h"
 
 #include <memory>
 #include <functional>
@@ -100,6 +103,9 @@ private:
     BlockInteraction blockInteraction_;
     EntityManager    entityManager_;
     EntityRenderer   entityRenderer_;
+    MobRenderer      mobRenderer_;
+    MobSpawner       mobSpawner_;
+    DayNightCycle    dayNightCycle_;
 
     // 多线程区块任务管理器
     ChunkTaskManager chunkTaskMgr_;
@@ -159,6 +165,9 @@ private:
 
     // Incremental chunk saving: save up to N dirty chunks per tick
     static constexpr int INCREMENTAL_SAVE_PER_TICK = 2;
+
+    // 玩家攻击生物（game_survival.cpp）
+    void tickPlayerAttack();
 
     // FPS 显示（F3 切换）
     bool showFps_ = false;

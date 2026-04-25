@@ -5,6 +5,7 @@
 #include "player/inventory.h"
 #include "entity/entity_manager.h"
 #include "entity/item_entity.h"
+#include "entity/mob_entity.h"
 #include "chunk.h"
 #include "chunk_serializer.h"
 #include "world.h"
@@ -256,11 +257,11 @@ bool SaveManager::saveEntities(const EntityManager& mgr) {
         w.writeHeader(VCFile::Type::Entities, VCFile::VERSION_ENTITIES);
 
         // Count living item entities
-        uint32_t count = 0;
+        uint32_t itemCount = 0;
         for (const auto& e : mgr.entities()) {
-            if (e && e->alive && e->kind() == EntityKind::Item) ++count;
+            if (e && e->alive && e->kind() == EntityKind::Item) ++itemCount;
         }
-        w.writeU32(count);
+        w.writeU32(itemCount);
 
         for (const auto& e : mgr.entities()) {
             if (!e || !e->alive || e->kind() != EntityKind::Item) continue;
@@ -281,6 +282,30 @@ bool SaveManager::saveEntities(const EntityManager& mgr) {
             // Timers
             w.writeI32(item.pickupDelayTicks);
             w.writeI32(item.lifetimeTicks);
+        }
+
+        // Count living mob entities
+        uint32_t mobCount = 0;
+        for (const auto& e : mgr.entities()) {
+            if (e && e->alive && e->kind() == EntityKind::Mob && !static_cast<const MobEntity&>(*e).isDying)
+                ++mobCount;
+        }
+        w.writeU32(mobCount);
+
+        for (const auto& e : mgr.entities()) {
+            if (!e || !e->alive || e->kind() != EntityKind::Mob) continue;
+            const auto& mob = static_cast<const MobEntity&>(*e);
+            if (mob.isDying) continue;
+
+            w.writeU8(static_cast<uint8_t>(mob.mobType));
+            w.writeF32(mob.position.x);
+            w.writeF32(mob.position.y);
+            w.writeF32(mob.position.z);
+            w.writeF32(mob.velocity.x);
+            w.writeF32(mob.velocity.y);
+            w.writeF32(mob.velocity.z);
+            w.writeI32(mob.hp);
+            w.writeF32(mob.bodyYaw);
         }
 
         w.close();
@@ -345,6 +370,34 @@ bool SaveManager::loadEntities(EntityManager& mgr) {
         item->visualPhase  = std::fmod(pos.x + pos.z * 1.37f, 6.2831853f);
         item->prevVisualYaw = item->visualYaw;
         mgr.addEntity(std::move(item));
+    }
+
+    // Load mob entities (if data remains)
+    if (r.isValid()) {
+        uint32_t mobCount = r.readU32();
+        for (uint32_t i = 0; i < mobCount && r.isValid(); ++i) {
+            uint8_t typeU8 = r.readU8();
+            if (typeU8 >= static_cast<uint8_t>(MobType::COUNT)) { r.skip(28); continue; }
+
+            MobType type = static_cast<MobType>(typeU8);
+            glm::vec3 pos;
+            pos.x = r.readF32(); pos.y = r.readF32(); pos.z = r.readF32();
+            glm::vec3 vel;
+            vel.x = r.readF32(); vel.y = r.readF32(); vel.z = r.readF32();
+            int32_t hp = r.readI32();
+            float yaw = r.readF32();
+
+            if (!r.isValid()) break;
+
+            auto mob = std::make_unique<MobEntity>(type);
+            mob->position = pos;
+            mob->prevPosition = pos;
+            mob->velocity = vel;
+            mob->hp = hp;
+            mob->bodyYaw = yaw;
+            mob->prevBodyYaw = yaw;
+            mgr.addEntity(std::move(mob));
+        }
     }
 
     if (!r.isValid()) {

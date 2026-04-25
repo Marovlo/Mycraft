@@ -52,8 +52,10 @@ void SmeltingRegistry::registerDefaults() {
     // 原木 → 木炭（MC原版：木炭和煤功能相同，这里产出煤代替）
     registerRecipe(Item::OakLog, {Item::Coal, 1, 0}, 0.15f);
 
-    // 食物冶炼（预留）
-    // registerRecipe(Item::RawBeef, {Item::CookedBeef, 1, 0}, 0.35f);
+    // 食物冶炼（Phase 5: 生物掉落物）
+    registerRecipe(Item::RawPorkchop, {Item::CookedPorkchop, 1, 0}, 0.35f);
+    registerRecipe(Item::RawBeef,     {Item::CookedBeef,     1, 0}, 0.35f);
+    registerRecipe(Item::RawChicken,  {Item::CookedChicken,  1, 0}, 0.35f);
 
     // ========== 燃料（MC原版燃烧时间，单位tick，20tick=1秒） ==========
     // 木质物品

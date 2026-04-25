@@ -39,6 +39,7 @@ Game::~Game() {
     }
     blockModel_.destroy(engine_);
     entityRenderer_.destroy();
+    mobRenderer_.destroy();
     uiRenderer_.destroy();
     textureAtlas_.destroy(engine_);
     engine_.cleanup();
@@ -123,6 +124,7 @@ void Game::init() {
     ItemRegistry::instance().registerDefaults();
     RecipeRegistry::instance().registerDefaults();
     SmeltingRegistry::instance().registerDefaults();
+    MobRegistry::instance().registerDefaults();
 
     if (!engine_.init(1280, 720, "Mycraft")) {
         throw std::runtime_error("Failed to init engine");
@@ -143,6 +145,7 @@ void Game::init() {
         if (saveManager_.loadLevelData(seed, totalTicks, spawnX, spawnY, spawnZ, name)) {
             worldSeed_ = seed;
             player_.spawnPoint = glm::vec3(spawnX, spawnY, spawnZ);
+            dayNightCycle_.setTotalTicks(static_cast<uint32_t>(totalTicks));
             hasExistingSave = true;
             std::cout << "[Save] Loaded world \"" << name << "\" (seed=" << seed
                       << ", ticks=" << totalTicks << ")\n";
@@ -156,6 +159,13 @@ void Game::init() {
     uiRenderer_.setAtlas(&textureAtlas_);
     blockModel_.init(engine_, textureAtlas_);
     entityRenderer_.init(&engine_, &textureAtlas_);
+    mobRenderer_.init(&engine_);
+    {
+        std::string mobTexDir = std::string(ASSET_DIR) + "/textures/mobs";
+        if (!mobRenderer_.loadMobTextures(engine_, mobTexDir)) {
+            std::cerr << "Warning: failed to load mob textures from " << mobTexDir << "\n";
+        }
+    }
 
     hud_.init(&uiRenderer_, &blockModel_, &textureAtlas_, &engine_);
     inventoryScreen_.init(&uiRenderer_, &blockModel_, &textureAtlas_, &engine_);
@@ -388,7 +398,10 @@ void Game::update(float dt) {
     ubo.model = glm::mat4(1.0f);
     ubo.view  = glm::lookAt(renderEye, renderEye + player_.getForward(), glm::vec3(0, 1, 0));
     ubo.proj  = player_.getProjectionMatrix(aspect);
-    ubo.fogColor = glm::vec4(0.53f, 0.81f, 0.92f, 1.0f);
+    // 昼夜循环天空颜色
+    glm::vec3 skyCol = dayNightCycle_.getSkyColor();
+    glm::vec3 fogCol = dayNightCycle_.getFogColor();
+    ubo.fogColor = glm::vec4(fogCol, 1.0f);
     ubo.viewPos  = glm::vec4(renderEye, 1.0f);
     float fogStart = static_cast<float>((RENDER_DISTANCE - 2) * CHUNK_SIZE);
     float fogEnd   = static_cast<float>(RENDER_DISTANCE * CHUNK_SIZE);
@@ -408,7 +421,7 @@ void Game::update(float dt) {
         ubo.fogColor = glm::vec4(0.02f, 0.06f, 0.22f, 1.0f);
         engine_.setClearColor(0.02f, 0.06f, 0.22f);
     } else {
-        engine_.setClearColor(0.53f, 0.81f, 0.92f);
+        engine_.setClearColor(skyCol.r, skyCol.g, skyCol.b);
     }
 
     float sw = static_cast<float>(engine_.getWindowWidth());
@@ -440,6 +453,7 @@ void Game::update(float dt) {
     }
 
     entityRenderer_.buildFrame(entityManager_, partial);
+    mobRenderer_.buildFrame(entityManager_, partial, &dayNightCycle_);
     engine_.updateUniformBuffer(ubo);
 
     // 方块选择高亮 + 破坏裂纹覆盖层（game_highlight.cpp）
@@ -457,6 +471,10 @@ void Game::gameTick() {
 
     if (player_.attackCooldownTicks > 0) --player_.attackCooldownTicks;
     if (player_.hurtTicks > 0) --player_.hurtTicks;
+    if (player_.invulnerableTicks > 0) --player_.invulnerableTicks;
+
+    // 昼夜循环 — 使用 tick clock 的总 tick 数驱动
+    dayNightCycle_.setTime(static_cast<uint32_t>(tickClock_.getTotalTicks() % 24000));
 
     // 玩家生存系统（game_survival.cpp）
     tickFallDamage();
@@ -474,6 +492,12 @@ void Game::gameTick() {
     blockInteraction_.tick(world_, player_, inventory_, entityManager_,
                             leftMouseHeld_, MAX_REACH);
     entityManager_.tick(world_, player_, inventory_);
+
+    // 生物生成与消失
+    mobSpawner_.tick(world_, player_, entityManager_, dayNightCycle_);
+
+    // 玩家攻击生物
+    tickPlayerAttack();
 
     // Tick all furnaces (smelting progress, fuel consumption)
     furnaceManager_.tick();
@@ -810,6 +834,11 @@ void Game::pollChunkGenResults() {
         world_.markChunkDirty(r.cx, r.cz - 1);
         world_.markChunkDirty(r.cx, r.cz + 1);
 
+        // 新生成的区块：放置初始被动生物
+        if (!chunk->isModified()) {
+            mobSpawner_.spawnInitialMobs(world_, entityManager_, r.cx, r.cz);
+        }
+
         // 从 inflight 集合中移除（生成阶段完成）
         // 注意：mesh 构建阶段会重新加入 inflight
     }
@@ -1049,6 +1078,19 @@ void Game::render(VkCommandBuffer cmd) {
 
     // Entities (dropped items) — also through transparent pipeline for bobbing alpha
     entityRenderer_.render(cmd);
+
+    // Mob entities — switch to mob texture atlas, render, then switch back
+    if (mobRenderer_.hasMobAtlas() && mobRenderer_.hasContent()) {
+        // Switch to opaque pipeline for mobs (they're solid)
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, engine_.getPipeline());
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+            engine_.getPipelineLayout(), 0, 1, &frame.descriptorSet, 0, nullptr);
+        // Temporarily switch texture to mob atlas
+        engine_.updateTextureDescriptor(mobRenderer_.getMobAtlasImageView(), engine_.getDefaultSampler());
+        mobRenderer_.render(cmd);
+        // Restore block texture atlas
+        engine_.updateTextureDescriptor(textureAtlas_.getImage().imageView, engine_.getDefaultSampler());
+    }
 
     // === UI pass (engine switches to UI pipeline internally) ===
     uiRenderer_.flush(cmd, engine_.getWindowWidth(), engine_.getWindowHeight());

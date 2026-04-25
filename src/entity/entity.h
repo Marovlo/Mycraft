@@ -12,6 +12,8 @@ class EntityManager;
 // entity kinds arrive (mobs, projectiles, XP orbs, ...).
 enum class EntityKind : uint8_t {
     Item,
+    Mob,
+    Arrow,
 };
 
 // Base class for everything that lives in the world besides the player and

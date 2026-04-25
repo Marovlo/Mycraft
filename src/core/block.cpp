@@ -338,4 +338,16 @@ void BlockRegistry::registerDefaults() {
         .requiredToolType = ToolType::Axe,
         .drops = { D{Item::Chest, 1, 1} },
     });
+
+    // Block::WhiteWool (id = 36)
+    registerBlock({
+        .name = "white_wool",
+        .displayName = "White Wool",
+        .renderType = BlockRenderType::Opaque,
+        .textureNames = BlockFaceTextureNames::uniform("white_wool"),
+        .isSolid = true,
+        .isOpaque = true,
+        .hardness = 0.8f,
+        .drops = { D{Item::WhiteWool, 1, 1} },
+    });
 }

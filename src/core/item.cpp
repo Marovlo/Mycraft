@@ -213,4 +213,128 @@ void ItemRegistry::registerDefaults() {
 
     // Storage block items
     regBlockItem("chest", "Chest", Block::Chest);  // 67
+
+    // ========== Phase 5: 生物掉落物 + 新物品 ==========
+
+    // 食物 — 生肉
+    registerItem({  // 68 = RawPorkchop
+        .name = "raw_porkchop",
+        .displayName = "Raw Porkchop",
+        .type = ItemType::Food,
+        .maxStackSize = 64,
+        .hungerRestore = 3,
+        .saturationRestore = 1.8f,
+        .iconTileName = "item_raw_porkchop",
+    });
+    registerItem({  // 69 = CookedPorkchop
+        .name = "cooked_porkchop",
+        .displayName = "Cooked Porkchop",
+        .type = ItemType::Food,
+        .maxStackSize = 64,
+        .hungerRestore = 8,
+        .saturationRestore = 12.8f,
+        .iconTileName = "item_cooked_porkchop",
+    });
+    registerItem({  // 70 = RawBeef
+        .name = "raw_beef",
+        .displayName = "Raw Beef",
+        .type = ItemType::Food,
+        .maxStackSize = 64,
+        .hungerRestore = 3,
+        .saturationRestore = 1.8f,
+        .iconTileName = "item_raw_beef",
+    });
+    registerItem({  // 71 = CookedBeef
+        .name = "cooked_beef",
+        .displayName = "Steak",
+        .type = ItemType::Food,
+        .maxStackSize = 64,
+        .hungerRestore = 8,
+        .saturationRestore = 12.8f,
+        .iconTileName = "item_cooked_beef",
+    });
+    registerItem({  // 72 = RawChicken
+        .name = "raw_chicken",
+        .displayName = "Raw Chicken",
+        .type = ItemType::Food,
+        .maxStackSize = 64,
+        .hungerRestore = 2,
+        .saturationRestore = 1.2f,
+        .iconTileName = "item_raw_chicken",
+    });
+    registerItem({  // 73 = CookedChicken
+        .name = "cooked_chicken",
+        .displayName = "Cooked Chicken",
+        .type = ItemType::Food,
+        .maxStackSize = 64,
+        .hungerRestore = 6,
+        .saturationRestore = 7.2f,
+        .iconTileName = "item_cooked_chicken",
+    });
+
+    // 材料
+    registerItem({  // 74 = Leather
+        .name = "leather",
+        .displayName = "Leather",
+        .type = ItemType::Material,
+        .maxStackSize = 64,
+        .iconTileName = "item_leather",
+    });
+    registerItem({  // 75 = Feather
+        .name = "feather",
+        .displayName = "Feather",
+        .type = ItemType::Material,
+        .maxStackSize = 64,
+        .iconTileName = "item_feather",
+    });
+
+    // 羊毛方块物品
+    regBlockItem("white_wool", "White Wool", Block::WhiteWool);  // 76
+
+    registerItem({  // 77 = Bone
+        .name = "bone",
+        .displayName = "Bone",
+        .type = ItemType::Material,
+        .maxStackSize = 64,
+        .iconTileName = "item_bone",
+    });
+    registerItem({  // 78 = Arrow
+        .name = "arrow",
+        .displayName = "Arrow",
+        .type = ItemType::Material,
+        .maxStackSize = 64,
+        .iconTileName = "item_arrow",
+    });
+    registerItem({  // 79 = Bow
+        .name = "bow",
+        .displayName = "Bow",
+        .type = ItemType::Weapon,
+        .maxStackSize = 1,
+        .durability = 384,
+        .attackDamage = 1.0f,
+        .iconTileName = "item_bow",
+    });
+    registerItem({  // 80 = Gunpowder
+        .name = "gunpowder",
+        .displayName = "Gunpowder",
+        .type = ItemType::Material,
+        .maxStackSize = 64,
+        .iconTileName = "item_gunpowder",
+    });
+    registerItem({  // 81 = StringItem
+        .name = "string",
+        .displayName = "String",
+        .type = ItemType::Material,
+        .maxStackSize = 64,
+        .iconTileName = "item_string",
+    });
+    registerItem({  // 82 = SpiderEye
+        .name = "spider_eye",
+        .displayName = "Spider Eye",
+        .type = ItemType::Food,
+        .maxStackSize = 64,
+        .hungerRestore = 2,
+        .saturationRestore = 3.2f,
+        .iconTileName = "item_spider_eye",
+    });
 }

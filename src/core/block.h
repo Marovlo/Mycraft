@@ -62,6 +62,9 @@ namespace Block {
 
     // Storage blocks
     constexpr BlockId Chest         = 35;
+
+    // Wool
+    constexpr BlockId WhiteWool     = 36;
 }
 
 // ========== Block Properties ==========

@@ -7,6 +7,7 @@
 
 #include "game.h"
 #include "core/debug.h"
+#include "entity/mob_entity.h"
 #include <cmath>
 #include <algorithm>
 
@@ -117,6 +118,85 @@ void Game::tickBreathing() {
     } else {
         if (player_.air < player_.maxAir) {
             player_.air = std::min(player_.air + 5, player_.maxAir);
+        }
+    }
+}
+
+// ========== 玩家攻击生物 ==========
+
+void Game::tickPlayerAttack() {
+    if (player_.dead) return;
+    if (!leftMouseHeld_) return;
+    if (player_.attackCooldownTicks > 0) return;
+
+    // 检查玩家视线方向是否命中生物
+    glm::vec3 eye = player_.getEyePosition();
+    glm::vec3 fwd = player_.getForward();
+
+    MobEntity* closestMob = nullptr;
+    float closestDist = MAX_REACH + 1.0f;
+
+    for (const auto& e : entityManager_.entities()) {
+        if (!e || !e->alive || e->kind() != EntityKind::Mob) continue;
+        auto& mob = static_cast<MobEntity&>(*e);
+        if (mob.isDying) continue;
+
+        // AABB 射线检测
+        glm::vec3 minB = mob.getMinBounds();
+        glm::vec3 maxB = mob.getMaxBounds();
+
+        // 射线-AABB 相交测试
+        float tmin = 0.0f, tmax = MAX_REACH;
+        bool hit = true;
+        for (int i = 0; i < 3; i++) {
+            if (std::abs(fwd[i]) < 1e-6f) {
+                if (eye[i] < minB[i] || eye[i] > maxB[i]) { hit = false; break; }
+            } else {
+                float invD = 1.0f / fwd[i];
+                float t1 = (minB[i] - eye[i]) * invD;
+                float t2 = (maxB[i] - eye[i]) * invD;
+                if (t1 > t2) std::swap(t1, t2);
+                tmin = std::max(tmin, t1);
+                tmax = std::min(tmax, t2);
+                if (tmin > tmax) { hit = false; break; }
+            }
+        }
+
+        if (hit && tmin < closestDist) {
+            closestDist = tmin;
+            closestMob = &mob;
+        }
+    }
+
+    if (closestMob) {
+        // 计算伤害
+        const ItemStack& held = inventory_.getHeldItem();
+        float baseDmg = 1.0f;  // 空手
+        if (!held.isEmpty()) {
+            const auto& itemProps = ItemRegistry::instance().get(held.id);
+            if (itemProps.attackDamage > 0.0f) {
+                baseDmg = itemProps.attackDamage;
+            }
+        }
+
+        // 击退方向
+        glm::vec3 kb = glm::normalize(closestMob->position - player_.position);
+        kb.y = 0;
+        if (glm::length(kb) < 0.01f) kb = fwd;
+        kb = glm::normalize(kb);
+
+        closestMob->takeDamage(static_cast<int>(baseDmg), kb);
+        player_.attackCooldownTicks = player_.attackCooldownMax;
+
+        // 工具耐久消耗
+        if (!held.isEmpty()) {
+            const auto& itemProps = ItemRegistry::instance().get(held.id);
+            if (itemProps.durability > 0) {
+                inventory_.getHeldItem().durability++;
+                if (inventory_.getHeldItem().durability >= itemProps.durability) {
+                    inventory_.getHeldItem().clear();
+                }
+            }
         }
     }
 }

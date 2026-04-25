@@ -65,6 +65,9 @@ public:
     // Set by takeDamage(), decremented each tick.
     int hurtTicks = 0;
 
+    // 无敌帧：受伤后短暂无敌（MC: 10 ticks = 0.5s）
+    int invulnerableTicks = 0;
+
     // Full heal + reset state. Used on respawn.
     void respawn();
 

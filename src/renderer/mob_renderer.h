@@ -1,0 +1,93 @@
+#pragma once
+
+#include "engine/vulkan_engine.h"
+#include "entity/mob_entity.h"
+#include <vector>
+#include <unordered_map>
+#include <string>
+
+class TextureAtlas;
+class EntityManager;
+
+// 生物模型的一个长方体部件
+struct MobCuboid {
+    glm::vec3 origin;    // 部件原点（相对于模型中心）
+    glm::vec3 size;      // 部件尺寸
+    glm::vec3 pivot;     // 旋转轴心
+    int uvX, uvY;        // 纹理 UV 起始位置（像素坐标）
+};
+
+// 一种生物的完整模型定义
+struct MobModelDef {
+    MobType type;
+    std::string textureName;  // 纹理文件名（不含扩展名）
+    int texWidth, texHeight;  // 纹理尺寸
+
+    // 部件列表
+    MobCuboid head;
+    MobCuboid body;
+    MobCuboid legFrontLeft, legFrontRight;
+    MobCuboid legBackLeft, legBackRight;
+    MobCuboid armLeft, armRight;  // 仅人形生物使用
+
+    bool isHumanoid = false;     // 人形（僵尸/骷髅）vs 四足
+    bool hasArms = false;
+};
+
+// 生物渲染器：收集所有可见生物，构建顶点数据，一次 draw call
+class MobRenderer {
+public:
+    void init(VulkanEngine* engine);
+    void destroy();
+
+    // 加载所有生物纹理到独立的纹理图集
+    bool loadMobTextures(VulkanEngine& engine, const std::string& mobTextureDir);
+
+    // 每帧重建 mesh
+    void buildFrame(const EntityManager& mgr, float partialTick,
+                    const class DayNightCycle* dayNight);
+
+    // 渲染（需要在 3D 管线绑定后调用）
+    // 会临时切换纹理 descriptor，调用后需要恢复原纹理
+    void render(VkCommandBuffer cmd);
+
+    // 获取生物纹理图集的 image view 和 sampler
+    VkImageView getMobAtlasImageView() const { return mobAtlasImage_.imageView; }
+    bool hasMobAtlas() const { return mobAtlasImage_.allocation != nullptr; }
+    bool hasContent() const { return indexCountThisFrame_ > 0; }
+
+private:
+    VulkanEngine* engine_ = nullptr;
+
+    // 生物纹理图集
+    AllocatedImage mobAtlasImage_;
+    uint32_t atlasWidth_ = 0, atlasHeight_ = 0;
+
+    // 模型定义
+    MobModelDef models_[static_cast<int>(MobType::COUNT)];
+    void registerModels();
+
+    // 每种生物纹理在图集中的 UV 偏移
+    struct TexRegion {
+        float uOffset, vOffset;  // 归一化偏移
+        float uScale, vScale;    // 归一化缩放
+    };
+    TexRegion texRegions_[static_cast<int>(MobType::COUNT)];
+
+    // CPU staging
+    std::vector<Vertex> vertices_;
+    std::vector<uint32_t> indices_;
+
+    // GPU buffers
+    AllocatedBuffer vertexBuffer_;
+    AllocatedBuffer indexBuffer_;
+    VkDeviceSize vertexBufferSize_ = 0;
+    VkDeviceSize indexBufferSize_ = 0;
+    uint32_t indexCountThisFrame_ = 0;
+
+    void ensureCapacity();
+    void appendMobMesh(const MobEntity& mob, float partialTick, float skyLightFactor);
+    void addCuboid(const MobCuboid& cuboid, const TexRegion& texReg,
+                   int texW, int texH,
+                   const glm::mat4& parentTransform, float light);
+};

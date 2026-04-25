@@ -107,6 +107,23 @@ namespace Item {
 
     // Storage blocks
     constexpr ItemId Chest         = 67;
+
+    // Phase 5: 生物掉落物 + 新物品
+    constexpr ItemId RawPorkchop    = 68;
+    constexpr ItemId CookedPorkchop = 69;
+    constexpr ItemId RawBeef        = 70;
+    constexpr ItemId CookedBeef     = 71;
+    constexpr ItemId RawChicken     = 72;
+    constexpr ItemId CookedChicken  = 73;
+    constexpr ItemId Leather        = 74;
+    constexpr ItemId Feather        = 75;
+    constexpr ItemId WhiteWool      = 76;
+    constexpr ItemId Bone           = 77;
+    constexpr ItemId Arrow          = 78;
+    constexpr ItemId Bow            = 79;
+    constexpr ItemId Gunpowder      = 80;
+    constexpr ItemId StringItem     = 81;
+    constexpr ItemId SpiderEye      = 82;
 }
 
 // ========== Item Type ==========
