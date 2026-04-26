@@ -48,13 +48,16 @@ public:
                     const class DayNightCycle* dayNight);
 
     // 渲染（需要在 3D 管线绑定后调用）
-    // 会临时切换纹理 descriptor，调用后需要恢复原纹理
-    void render(VkCommandBuffer cmd);
+    // 使用独立的 descriptor set，不影响方块纹理
+    void render(VkCommandBuffer cmd, VkPipelineLayout pipelineLayout);
 
     // 获取生物纹理图集的 image view 和 sampler
     VkImageView getMobAtlasImageView() const { return mobAtlasImage_.imageView; }
     bool hasMobAtlas() const { return mobAtlasImage_.allocation != nullptr; }
     bool hasContent() const { return indexCountThisFrame_ > 0; }
+
+    // 获取 mob 专用 descriptor set（每帧需要更新 UBO 绑定）
+    VkDescriptorSet getMobDescriptorSet(int frameIndex) const { return mobDescriptorSets_[frameIndex]; }
 
 private:
     VulkanEngine* engine_ = nullptr;
@@ -62,6 +65,9 @@ private:
     // 生物纹理图集
     AllocatedImage mobAtlasImage_;
     uint32_t atlasWidth_ = 0, atlasHeight_ = 0;
+
+    // 每帧独立的 descriptor set（绑定 mob 纹理 + 当前帧 UBO）
+    VkDescriptorSet mobDescriptorSets_[2] = {VK_NULL_HANDLE, VK_NULL_HANDLE};
 
     // 模型定义
     MobModelDef models_[static_cast<int>(MobType::COUNT)];

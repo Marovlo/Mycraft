@@ -207,6 +207,16 @@ bool MobRenderer::loadMobTextures(VulkanEngine& engine, const std::string& mobTe
     mobAtlasImage_ = engine.uploadTexture(atlasPixels.data(),
         static_cast<int>(atlasWidth_), static_cast<int>(atlasHeight_), 4);
 
+    // 为每帧分配独立的 descriptor set
+    for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+        mobDescriptorSets_[i] = engine.allocateExtraDescriptorSet(
+            mobAtlasImage_.imageView, engine.getDefaultSampler());
+        if (mobDescriptorSets_[i] == VK_NULL_HANDLE) {
+            std::cerr << "MobRenderer: failed to allocate descriptor set for frame " << i << "\n";
+            return false;
+        }
+    }
+
     std::cout << "MobRenderer: loaded " << entries.size() << " mob textures ("
               << atlasWidth_ << "x" << atlasHeight_ << " atlas)\n";
     return true;
@@ -250,6 +260,25 @@ void MobRenderer::buildFrame(const EntityManager& mgr, float partialTick,
 
     ensureCapacity();
 
+    // 更新当前帧的 mob descriptor set 的 UBO 绑定
+    {
+        int frameIdx = engine_->getCurrentFrameIndex();
+        auto& frame = engine_->getCurrentFrame();
+        VkDescriptorBufferInfo bufferInfo{};
+        bufferInfo.buffer = frame.uniformBuffer.buffer;
+        bufferInfo.offset = 0;
+        bufferInfo.range = sizeof(UniformBufferObject);
+
+        VkWriteDescriptorSet uboWrite{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+        uboWrite.dstSet = mobDescriptorSets_[frameIdx];
+        uboWrite.dstBinding = 0;
+        uboWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        uboWrite.descriptorCount = 1;
+        uboWrite.pBufferInfo = &bufferInfo;
+
+        vkUpdateDescriptorSets(engine_->getDevice(), 1, &uboWrite, 0, nullptr);
+    }
+
     void* vData = engine_->mapBuffer(vertexBuffer_);
     std::memcpy(vData, vertices_.data(), sizeof(Vertex) * vertices_.size());
     engine_->unmapBuffer(vertexBuffer_);
@@ -271,10 +300,10 @@ void MobRenderer::appendMobMesh(const MobEntity& mob, float partialTick, float s
     float renderYaw = glm::mix(mob.prevBodyYaw, mob.bodyYaw, partialTick);
     float renderWalk = glm::mix(mob.prevWalkCycle, mob.walkCycle, partialTick);
 
-    // 受伤闪红：通过提高亮度模拟
+    // 受伤闪红：使用特殊 light 编码 (light > 1.5 = 受伤, 实际亮度 = light - 2.0)
     float light = skyLightFactor;
     if (mob.hurtTicks > 0) {
-        light = 1.5f;  // 闪红效果
+        light = 2.0f + skyLightFactor;  // 着色器中 light > 1.5 触发红色混合
     }
 
     // 死亡动画：绕X轴旋转
@@ -471,8 +500,14 @@ void MobRenderer::addCuboid(const MobCuboid& cuboid, const TexRegion& texReg,
 
 // ========== 渲染 ==========
 
-void MobRenderer::render(VkCommandBuffer cmd) {
+void MobRenderer::render(VkCommandBuffer cmd, VkPipelineLayout pipelineLayout) {
     if (indexCountThisFrame_ == 0) return;
+
+    // 绑定 mob 专用的 descriptor set（包含 mob 纹理）
+    // 注意：调用者需要在调用后重新绑定方块纹理的 descriptor set
+    int frameIdx = engine_->getCurrentFrameIndex();
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+        pipelineLayout, 0, 1, &mobDescriptorSets_[frameIdx], 0, nullptr);
 
     VkBuffer vb[] = {vertexBuffer_.buffer};
     VkDeviceSize offsets[] = {0};

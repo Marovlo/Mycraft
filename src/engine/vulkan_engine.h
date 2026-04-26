@@ -145,6 +145,7 @@ public:
     VkPipelineLayout getPipelineLayout() const { return pipelineLayout_; }
     VkPipeline getPipeline() const { return graphicsPipeline_; }
     FrameData& getCurrentFrame() { return frames_[currentFrame_]; }
+    uint32_t getCurrentFrameIndex() const { return currentFrame_; }
 
     // Update UBO
     void updateUniformBuffer(const UniformBufferObject& ubo);
@@ -152,6 +153,12 @@ public:
     // Update texture descriptor
     void updateTextureDescriptor(VkImageView imageView, VkSampler sampler);
     VkSampler getDefaultSampler() const { return defaultSampler_; }
+
+    // 分配额外的 descriptor set（用于 mob 纹理等）
+    // 返回的 descriptor set 绑定了相同的 UBO（当前帧），但使用不同的纹理
+    VkDescriptorSet allocateExtraDescriptorSet(VkImageView imageView, VkSampler sampler);
+    VkDescriptorSetLayout getDescriptorSetLayout() const { return descriptorSetLayout_; }
+    VkDescriptorPool getDescriptorPool() const { return descriptorPool_; }
 
     // Clear color (sky color, changes when underwater)
     void setClearColor(float r, float g, float b) { clearColor_ = {r, g, b, 1.0f}; }

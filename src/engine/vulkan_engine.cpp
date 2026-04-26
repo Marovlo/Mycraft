@@ -644,14 +644,16 @@ void VulkanEngine::createUIPipeline() {
 }
 
 void VulkanEngine::createDescriptorPool() {
+    // 额外预留 descriptor set 给 mob 纹理等扩展用途
+    constexpr uint32_t EXTRA_SETS = 4;
     std::array<VkDescriptorPoolSize, 2> poolSizes{};
-    poolSizes[0] = {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, MAX_FRAMES_IN_FLIGHT};
-    poolSizes[1] = {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, MAX_FRAMES_IN_FLIGHT};
+    poolSizes[0] = {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, MAX_FRAMES_IN_FLIGHT + EXTRA_SETS};
+    poolSizes[1] = {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, MAX_FRAMES_IN_FLIGHT + EXTRA_SETS};
 
     VkDescriptorPoolCreateInfo poolInfo{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
     poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
     poolInfo.pPoolSizes = poolSizes.data();
-    poolInfo.maxSets = MAX_FRAMES_IN_FLIGHT;
+    poolInfo.maxSets = MAX_FRAMES_IN_FLIGHT + EXTRA_SETS;
 
     vkCreateDescriptorPool(device_, &poolInfo, nullptr, &descriptorPool_);
 
@@ -1072,6 +1074,49 @@ void VulkanEngine::updateTextureDescriptor(VkImageView imageView, VkSampler samp
 
         vkUpdateDescriptorSets(device_, 1, &write, 0, nullptr);
     }
+}
+
+VkDescriptorSet VulkanEngine::allocateExtraDescriptorSet(VkImageView imageView, VkSampler sampler) {
+    VkDescriptorSetAllocateInfo allocInfo{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+    allocInfo.descriptorPool = descriptorPool_;
+    allocInfo.descriptorSetCount = 1;
+    allocInfo.pSetLayouts = &descriptorSetLayout_;
+
+    VkDescriptorSet ds = VK_NULL_HANDLE;
+    VkResult res = vkAllocateDescriptorSets(device_, &allocInfo, &ds);
+    if (res != VK_SUCCESS) return VK_NULL_HANDLE;
+
+    // 绑定当前帧的 UBO（binding 0）
+    // 注意：这个 descriptor set 的 UBO 需要在每帧渲染前更新
+    VkDescriptorBufferInfo bufferInfo{};
+    bufferInfo.buffer = frames_[0].uniformBuffer.buffer;
+    bufferInfo.offset = 0;
+    bufferInfo.range = sizeof(UniformBufferObject);
+
+    // 绑定纹理（binding 1）
+    VkDescriptorImageInfo imageInfo{};
+    imageInfo.sampler = sampler;
+    imageInfo.imageView = imageView;
+    imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+    std::array<VkWriteDescriptorSet, 2> writes{};
+    writes[0] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+    writes[0].dstSet = ds;
+    writes[0].dstBinding = 0;
+    writes[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    writes[0].descriptorCount = 1;
+    writes[0].pBufferInfo = &bufferInfo;
+
+    writes[1] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+    writes[1].dstSet = ds;
+    writes[1].dstBinding = 1;
+    writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[1].descriptorCount = 1;
+    writes[1].pImageInfo = &imageInfo;
+
+    vkUpdateDescriptorSets(device_, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+
+    return ds;
 }
 
 void VulkanEngine::updateUniformBuffer(const UniformBufferObject& ubo) {

@@ -638,9 +638,6 @@ void Game::handleGameplayInput() {
 
     // Left mouse
     leftMouseHeld_ = input_.isCursorLocked() && input_.isMouseButtonDown(GLFW_MOUSE_BUTTON_LEFT);
-    if (input_.isCursorLocked() && input_.isMouseButtonPressed(GLFW_MOUSE_BUTTON_LEFT)) {
-        player_.attackCooldownTicks = player_.attackCooldownMax;
-    }
 
     // Q: drop
     if (input_.isKeyPressed(GLFW_KEY_Q) && input_.isCursorLocked()) {
@@ -1079,17 +1076,15 @@ void Game::render(VkCommandBuffer cmd) {
     // Entities (dropped items) — also through transparent pipeline for bobbing alpha
     entityRenderer_.render(cmd);
 
-    // Mob entities — switch to mob texture atlas, render, then switch back
+    // Mob entities — 使用独立的 descriptor set 渲染，不影响方块纹理
     if (mobRenderer_.hasMobAtlas() && mobRenderer_.hasContent()) {
-        // Switch to opaque pipeline for mobs (they're solid)
+        // 切换到不透明管线渲染生物
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, engine_.getPipeline());
+        // MobRenderer::render 内部会绑定 mob 专用的 descriptor set
+        mobRenderer_.render(cmd, engine_.getPipelineLayout());
+        // 恢复方块纹理的 descriptor set
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
             engine_.getPipelineLayout(), 0, 1, &frame.descriptorSet, 0, nullptr);
-        // Temporarily switch texture to mob atlas
-        engine_.updateTextureDescriptor(mobRenderer_.getMobAtlasImageView(), engine_.getDefaultSampler());
-        mobRenderer_.render(cmd);
-        // Restore block texture atlas
-        engine_.updateTextureDescriptor(textureAtlas_.getImage().imageView, engine_.getDefaultSampler());
     }
 
     // === UI pass (engine switches to UI pipeline internally) ===

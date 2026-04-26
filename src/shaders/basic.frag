@@ -39,6 +39,12 @@ void main() {
     bool isWaterFace = (fragLight <= -1.5);
     float lightVal = isWaterFace ? -(fragLight + 2.0) : fragLight;
 
+    // light > 1.5: 生物受伤闪红效果。实际亮度 = lightVal - 2.0 (编码为 light = 2.0 + realLight)
+    bool isHurt = (!isWaterFace && fragLight > 1.5);
+    if (isHurt) {
+        lightVal = fragLight - 2.0;
+    }
+
     vec4 texColor = texture(texSampler, fragTexCoord);
 
     // Alpha test for cutout rendering (destroy overlay, foliage, cross plants)
@@ -58,6 +64,11 @@ void main() {
 
     // Combine per-vertex light level with face shading
     vec3 litColor = texColor.rgb * lightVal * faceShade;
+
+    // 受伤闪红：混合红色
+    if (isHurt) {
+        litColor = mix(litColor, vec3(1.0, 0.3, 0.3), 0.5);
+    }
 
     // --- Fog computation ---
     vec3 fogCol   = ubo.fogColor.rgb;
