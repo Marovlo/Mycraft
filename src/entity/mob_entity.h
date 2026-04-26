@@ -106,6 +106,9 @@ public:
     int fuseTimer = 0;         // 爆炸倒计时 (30 ticks = 1.5s)
     bool ignited = false;
 
+    // 受击加速：被攻击后一段时间内加速移动和摆腿
+    int panicTicks = 0;        // 受击恐慌剩余tick数（被动生物用）
+
     // 燃烧（僵尸/骷髅阳光下）
     int fireTicks = 0;
     int fireTimer = 0;         // 每秒伤害计时
@@ -128,12 +131,29 @@ public:
     // 受伤
     void takeDamage(int amount, const glm::vec3& knockbackDir);
 
-    // 获取碰撞箱 AABB
+    // 获取碰撞箱 AABB（用于物理碰撞）
     glm::vec3 getMinBounds() const {
         return position - glm::vec3(mobWidth * 0.5f, mobHeight * 0.5f, mobWidth * 0.5f);
     }
     glm::vec3 getMaxBounds() const {
         return position + glm::vec3(mobWidth * 0.5f, mobHeight * 0.5f, mobWidth * 0.5f);
+    }
+
+    // 获取受击箱 AABB（用于攻击判定，包含头部区域）
+    // 受击箱从脚底开始，覆盖整个可见模型（包括头部）
+    // 比碰撞箱更大，确保从任何方向都能命中
+    glm::vec3 getHitboxMin() const {
+        // 脚底位置 = position.y - mobHeight/2
+        float feetY = position.y - mobHeight * 0.5f;
+        // 水平方向比碰撞箱大，确保头部和尾部都能被命中
+        float hitW = mobWidth * 0.8f;
+        return glm::vec3(position.x - hitW, feetY, position.z - hitW);
+    }
+    glm::vec3 getHitboxMax() const {
+        // 头顶位置 = position.y + mobHeight/2，再额外加一点余量
+        float topY = position.y + mobHeight * 0.5f + 0.1f;
+        float hitW = mobWidth * 0.8f;
+        return glm::vec3(position.x + hitW, topY, position.z + hitW);
     }
 
 private:

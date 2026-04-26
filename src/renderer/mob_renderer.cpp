@@ -17,55 +17,56 @@ namespace fs = std::filesystem;
 void MobRenderer::registerModels() {
     // ========== 猪 (Pig) ==========
     // MC原版：身体 8x8x16, 头部 8x8x8 在身体前方, 腿 4x6x4
-    // 纹理 64x32: 头(0,0), 身体(28,0 -> width=8,height=8,depth=6), 腿(0,16)
+    // 纹理 64x64: 头(0,0)展开32x16, 身体(0,16)展开36x18, 腿(0,34)展开16x10
     // 坐标系：Y=上, Z=前进方向(正面), 模型中心在脚底
     {
         auto& pig = models_[static_cast<int>(MobType::Pig)];
-        pig.type = MobType::Pig; pig.textureName = "pig"; pig.texWidth = 64; pig.texHeight = 32;
-        // 身体：宽8 高8 长16，中心在 (0, 11, 0)，底部Y=7，顶部Y=15
-        pig.body = {{-4, 7, -5}, {8, 8, 10}, {0, 11, 0}, 28, 0};
+        pig.type = MobType::Pig; pig.textureName = "pig"; pig.texWidth = 64; pig.texHeight = 64;
+        // 身体：宽8 高8 长10，中心在 (0, 11, 0)，底部Y=7，顶部Y=15
+        pig.body = {{-4, 7, -5}, {8, 8, 10}, {0, 11, 0}, 0, 16};
         // 头部：8x8x8，在身体前方（-Z方向），中心连接身体前端
         pig.head = {{-4, 7, -13}, {8, 8, 8}, {0, 11, -5}, 0, 0};
         // 四条腿：4x6x4 的柱子，从身体底部(Y=7)向下延伸到地面(Y=1)
-        pig.legFrontLeft  = {{-4, 1, -4}, {4, 6, 4}, {-2, 7, -3}, 0, 16};
-        pig.legFrontRight = {{ 0, 1, -4}, {4, 6, 4}, { 2, 7, -3}, 0, 16};
-        pig.legBackLeft   = {{-4, 1,  0}, {4, 6, 4}, {-2, 7,  2}, 0, 16};
-        pig.legBackRight  = {{ 0, 1,  0}, {4, 6, 4}, { 2, 7,  2}, 0, 16};
+        pig.legFrontLeft  = {{-4, 1, -4}, {4, 6, 4}, {-2, 7, -3}, 0, 34};
+        pig.legFrontRight = {{ 0, 1, -4}, {4, 6, 4}, { 2, 7, -3}, 0, 34};
+        pig.legBackLeft   = {{-4, 1,  0}, {4, 6, 4}, {-2, 7,  2}, 0, 34};
+        pig.legBackRight  = {{ 0, 1,  0}, {4, 6, 4}, { 2, 7,  2}, 0, 34};
         pig.isHumanoid = false;
     }
 
     // ========== 牛 (Cow) ==========
     // MC原版：身体 12x10x18, 头部 8x8x8 在身体前方, 腿 4x12x4
-    // 纹理 64x32
+    // 纹理 64x64: 头(0,0)展开32x16, 身体(0,16)展开44x22, 腿(0,38)展开16x16
     {
         auto& cow = models_[static_cast<int>(MobType::Cow)];
-        cow.type = MobType::Cow; cow.textureName = "cow"; cow.texWidth = 64; cow.texHeight = 32;
-        // 身体：宽10 高10 长16，底部Y=12，顶部Y=22
-        cow.body = {{-5, 12, -6}, {10, 10, 12}, {0, 17, 0}, 18, 0};
+        cow.type = MobType::Cow; cow.textureName = "cow"; cow.texWidth = 64; cow.texHeight = 64;
+        // 身体：宽10 高10 长12，底部Y=12，顶部Y=22
+        cow.body = {{-5, 12, -6}, {10, 10, 12}, {0, 17, 0}, 0, 16};
         // 头部：8x8x8，在身体前方
         cow.head = {{-4, 12, -14}, {8, 8, 8}, {0, 16, -6}, 0, 0};
         // 四条腿：4x12x4
-        cow.legFrontLeft  = {{-5, 0, -5}, {4, 12, 4}, {-3, 12, -4}, 0, 16};
-        cow.legFrontRight = {{ 1, 0, -5}, {4, 12, 4}, { 3, 12, -4}, 0, 16};
-        cow.legBackLeft   = {{-5, 0,  3}, {4, 12, 4}, {-3, 12,  4}, 0, 16};
-        cow.legBackRight  = {{ 1, 0,  3}, {4, 12, 4}, { 3, 12,  4}, 0, 16};
+        cow.legFrontLeft  = {{-5, 0, -5}, {4, 12, 4}, {-3, 12, -4}, 0, 38};
+        cow.legFrontRight = {{ 1, 0, -5}, {4, 12, 4}, { 3, 12, -4}, 0, 38};
+        cow.legBackLeft   = {{-5, 0,  3}, {4, 12, 4}, {-3, 12,  4}, 0, 38};
+        cow.legBackRight  = {{ 1, 0,  3}, {4, 12, 4}, { 3, 12,  4}, 0, 38};
         cow.isHumanoid = false;
     }
 
     // ========== 羊 (Sheep) ==========
     // MC原版：身体 10x8x16, 头部 6x6x6 在身体前方, 腿 4x6x4
+    // 纹理 64x64: 头(0,0)展开24x12, 身体(0,12)展开36x18, 腿(0,30)展开16x10
     {
         auto& sheep = models_[static_cast<int>(MobType::Sheep)];
-        sheep.type = MobType::Sheep; sheep.textureName = "sheep"; sheep.texWidth = 64; sheep.texHeight = 32;
+        sheep.type = MobType::Sheep; sheep.textureName = "sheep"; sheep.texWidth = 64; sheep.texHeight = 64;
         // 身体
-        sheep.body = {{-4, 7, -5}, {8, 8, 10}, {0, 11, 0}, 28, 0};
+        sheep.body = {{-4, 7, -5}, {8, 8, 10}, {0, 11, 0}, 0, 12};
         // 头部：6x6x6
         sheep.head = {{-3, 8, -11}, {6, 6, 6}, {0, 11, -5}, 0, 0};
         // 四条腿
-        sheep.legFrontLeft  = {{-4, 1, -4}, {4, 6, 4}, {-2, 7, -3}, 0, 16};
-        sheep.legFrontRight = {{ 0, 1, -4}, {4, 6, 4}, { 2, 7, -3}, 0, 16};
-        sheep.legBackLeft   = {{-4, 1,  0}, {4, 6, 4}, {-2, 7,  2}, 0, 16};
-        sheep.legBackRight  = {{ 0, 1,  0}, {4, 6, 4}, { 2, 7,  2}, 0, 16};
+        sheep.legFrontLeft  = {{-4, 1, -4}, {4, 6, 4}, {-2, 7, -3}, 0, 30};
+        sheep.legFrontRight = {{ 0, 1, -4}, {4, 6, 4}, { 2, 7, -3}, 0, 30};
+        sheep.legBackLeft   = {{-4, 1,  0}, {4, 6, 4}, {-2, 7,  2}, 0, 30};
+        sheep.legBackRight  = {{ 0, 1,  0}, {4, 6, 4}, { 2, 7,  2}, 0, 30};
         sheep.isHumanoid = false;
     }
 
@@ -539,8 +540,8 @@ void MobRenderer::addCuboid(const MobCuboid& cuboid, const TexRegion& texReg,
 
     glm::mat3 N = glm::mat3(parentTransform);
 
-    // +Y (top): corners 3,2,6,7
-    addFace(wc[3], wc[2], wc[6], wc[7], glm::normalize(N * glm::vec3(0, 1, 0)), top);
+    // +Y (top): corners 7,6,2,3 (修正绕序为CCW，避免被背面剔除)
+    addFace(wc[7], wc[6], wc[2], wc[3], glm::normalize(N * glm::vec3(0, 1, 0)), top);
     // -Y (bottom): corners 0,1,5,4
     addFace(wc[0], wc[1], wc[5], wc[4], glm::normalize(N * glm::vec3(0, -1, 0)), bottom);
     // -Z (front): corners 0,3,2,1

@@ -31,7 +31,8 @@ float HUD::getHotbarStartY(float screenH, int scale) const {
 void HUD::draw(float screenW, float screenH, const Inventory& inventory,
                float breakProgress, int gameTicks,
                int hp, int maxHp, int hunger, int maxHunger, bool isDead,
-               bool isEating, int air, int maxAir, int hurtTicks) {
+               bool isEating, int air, int maxAir, int hurtTicks,
+               bool targetingMob) {
     int   scale     = getGuiScale(screenH);
     float slotPx    = SLOT_SIZE * scale;
     float gapPx     = GAP       * scale;
@@ -166,6 +167,28 @@ void HUD::draw(float screenW, float screenH, const Inventory& inventory,
     // 5) Crosshair last so it sits on top in screen center.
     //    Scale crosshair too so it stays visible on Retina displays.
     ui_->drawCrosshair(screenW, screenH, 8.0f * scale, 1.0f * scale);
+
+    // 5b) 准星指向生物时显示小刀攻击标识
+    if (targetingMob && !isDead) {
+        float cx = screenW * 0.5f;
+        float cy = screenH * 0.5f;
+        float iconSz = 6.0f * scale;
+        float offsetY = 6.0f * scale;  // 准星下方偏移
+        glm::vec4 swordColor(1.0f, 0.85f, 0.6f, 0.9f);
+        // 绘制简化的小刀图标（用矩形组合）
+        // 刀身（斜向上的细长条）
+        float bladeW = 1.0f * scale;
+        float bladeH = iconSz;
+        ui_->drawRect(cx + 1.0f * scale, cy + offsetY, bladeW, bladeH, swordColor);
+        // 刀柄（横向短条）
+        float handleW = 3.0f * scale;
+        float handleH = 1.0f * scale;
+        ui_->drawRect(cx - 0.5f * scale, cy + offsetY + bladeH, handleW, handleH,
+                      glm::vec4(0.6f, 0.4f, 0.2f, 0.9f));
+        // 刀尖（顶部小点）
+        ui_->drawRect(cx + 1.0f * scale, cy + offsetY - 1.0f * scale, bladeW, 1.0f * scale,
+                      glm::vec4(0.9f, 0.9f, 0.9f, 0.9f));
+    }
 
     // 6) Health hearts — left side above hotbar.
     float iconSize = 8.0f * scale;   // slightly larger icons

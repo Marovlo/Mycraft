@@ -33,6 +33,7 @@
 #include "crafting/smelting_recipe.h"
 #include "renderer/mob_renderer.h"
 #include "entity/mob_spawner.h"
+#include "ui/game_console.h"
 
 #include <memory>
 #include <functional>
@@ -82,6 +83,9 @@ private:
     // 调试命令（game_debug.cpp）
     void handleDebugKeys();
 
+    // 控制台命令注册（game_console_cmds.cpp）
+    void registerConsoleCommands();
+
     // Save/Load
     void saveAll();       // Save player + dirty chunks + level data
 
@@ -106,6 +110,7 @@ private:
     MobRenderer      mobRenderer_;
     MobSpawner       mobSpawner_;
     DayNightCycle    dayNightCycle_;
+    GameConsole      console_;
 
     // 多线程区块任务管理器
     ChunkTaskManager chunkTaskMgr_;
@@ -149,6 +154,9 @@ private:
 
     Mesh targetHighlight_;
     bool hasTarget_ = false;
+
+    // 准星是否指向生物（用于显示攻击标识）
+    bool targetingMob_ = false;
 
     // 缓存上一帧的目标方块坐标，只在目标变化时重建高亮 mesh
     int prevTargetX_ = INT_MIN, prevTargetY_ = INT_MIN, prevTargetZ_ = INT_MIN;

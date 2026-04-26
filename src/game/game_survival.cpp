@@ -141,9 +141,9 @@ void Game::tickPlayerAttack() {
         auto& mob = static_cast<MobEntity&>(*e);
         if (mob.isDying) continue;
 
-        // AABB 射线检测
-        glm::vec3 minB = mob.getMinBounds();
-        glm::vec3 maxB = mob.getMaxBounds();
+        // AABB 射线检测（使用受击箱，比碰撞箱更大，包含头部）
+        glm::vec3 minB = mob.getHitboxMin();
+        glm::vec3 maxB = mob.getHitboxMax();
 
         // 射线-AABB 相交测试
         float tmin = 0.0f, tmax = MAX_REACH;

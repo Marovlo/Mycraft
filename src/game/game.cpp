@@ -245,6 +245,10 @@ void Game::init() {
 
 engine_.onUpdate = [this](float dt) { update(dt); };
     engine_.onRender = [this](VkCommandBuffer cmd, uint32_t) { render(cmd); };
+
+    // 初始化游戏内控制台
+    console_.init(&uiRenderer_);
+    registerConsoleCommands();
 }
 
 void Game::run() {
@@ -429,10 +433,41 @@ void Game::update(float dt) {
     int   bbx, bby, bbz;
     float bProg = -1.0f;
     blockInteraction_.getActiveBreak(bbx, bby, bbz, bProg);
+
+    // 检测准星是否指向生物（用于显示攻击标识）
+    targetingMob_ = false;
+    if (!player_.dead && input_.isCursorLocked()) {
+        glm::vec3 eye = player_.getEyePosition();
+        glm::vec3 fwd = player_.getForward();
+        for (const auto& e : entityManager_.entities()) {
+            if (!e || !e->alive || e->kind() != EntityKind::Mob) continue;
+            auto& mob = static_cast<const MobEntity&>(*e);
+            if (mob.isDying) continue;
+            glm::vec3 minB = mob.getHitboxMin();
+            glm::vec3 maxB = mob.getHitboxMax();
+            float tmin = 0.0f, tmax = MAX_REACH;
+            bool hit = true;
+            for (int i = 0; i < 3; i++) {
+                if (std::abs(fwd[i]) < 1e-6f) {
+                    if (eye[i] < minB[i] || eye[i] > maxB[i]) { hit = false; break; }
+                } else {
+                    float invD = 1.0f / fwd[i];
+                    float t1 = (minB[i] - eye[i]) * invD;
+                    float t2 = (maxB[i] - eye[i]) * invD;
+                    if (t1 > t2) std::swap(t1, t2);
+                    tmin = std::max(tmin, t1);
+                    tmax = std::min(tmax, t2);
+                    if (tmin > tmax) { hit = false; break; }
+                }
+            }
+            if (hit) { targetingMob_ = true; break; }
+        }
+    }
+
     hud_.draw(sw, sh, inventory_, bProg, tickClock_.getTotalTicks(),
               player_.hp, player_.maxHp, player_.hunger, player_.maxHunger,
               player_.dead, player_.isEating, player_.air, player_.maxAir,
-              player_.hurtTicks);
+              player_.hurtTicks, targetingMob_);
 
     // FPS 显示（F3 切换）
     if (showFps_) {
@@ -450,6 +485,11 @@ void Game::update(float dt) {
 
     if (activeScreen_) {
         activeScreen_->draw(sw, sh, inventory_);
+    }
+
+    // 控制台渲染（在所有 UI 之上）
+    if (console_.isOpen()) {
+        console_.draw(sw, sh);
     }
 
     entityRenderer_.buildFrame(entityManager_, partial);
@@ -531,6 +571,18 @@ void Game::gameTick() {
 // ============================================================
 
 void Game::handleFrameInput() {
+    // 控制台打开时，优先处理控制台输入
+    if (console_.isOpen()) {
+        if (console_.handleInput(input_)) {
+            // 控制台关闭后恢复游戏状态
+            if (!console_.isOpen()) {
+                input_.enableTextInput(false);
+                input_.setCursorLocked(true);
+            }
+            return;
+        }
+    }
+
     // Dead: only R to respawn
     if (player_.dead) {
         if (input_.isKeyPressed(GLFW_KEY_R)) {
@@ -589,6 +641,14 @@ void Game::handleGameplayInput() {
 
     // 调试快捷键（game_debug.cpp）
     handleDebugKeys();
+
+    // / 键：打开控制台（仅在游戏中，光标锁定时）
+    if (input_.isKeyPressed(GLFW_KEY_SLASH) && input_.isCursorLocked()) {
+        console_.open();
+        input_.enableTextInput(true);
+        input_.setCursorLocked(false);
+        return;
+    }
 
     // Mouse look
     if (input_.isCursorLocked()) {
@@ -729,6 +789,14 @@ void Game::handleRightClick() {
 
 void Game::handleTickInput() {
     if (activeScreen_) {
+        player_.velocity.x = 0.0f;
+        player_.velocity.z = 0.0f;
+        player_.sprinting = false;
+        return;
+    }
+
+    // 控制台打开时也阻止移动
+    if (console_.isOpen()) {
         player_.velocity.x = 0.0f;
         player_.velocity.z = 0.0f;
         player_.sprinting = false;

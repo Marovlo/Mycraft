@@ -113,144 +113,141 @@ TRANSPARENT = (0, 0, 0, 0)
 
 # ========== 生物纹理生成 ==========
 
+def draw_cuboid_uv(img, w, h, uvX, uvY, sx, sy, sz, top_c, bot_c, front_c, back_c, left_c, right_c):
+    """按MC标准长方体展开布局绘制一个部件的6个面纹理。
+    UV展开布局（从uvX,uvY开始）：
+      第一行(y=uvY):        [空sz宽] [顶面sx*sz] [底面sx*sz]
+      第二行(y=uvY+sz):     [左面sz*sy] [正面sx*sy] [右面sz*sy] [背面sx*sy]
+    总宽 = 2*sz + 2*sx, 总高 = sz + sy
+    """
+    # 顶面: (uvX+sz, uvY) size (sx, sz)
+    fill_rect(img, w, h, uvX + sz, uvY, sx, sz, top_c)
+    # 底面: (uvX+sz+sx, uvY) size (sx, sz)
+    fill_rect(img, w, h, uvX + sz + sx, uvY, sx, sz, bot_c)
+    # 正面(-Z): (uvX+sz, uvY+sz) size (sx, sy)
+    fill_rect(img, w, h, uvX + sz, uvY + sz, sx, sy, front_c)
+    # 左面(-X): (uvX, uvY+sz) size (sz, sy)
+    fill_rect(img, w, h, uvX, uvY + sz, sz, sy, left_c)
+    # 右面(+X): (uvX+sz+sx, uvY+sz) size (sz, sy)
+    fill_rect(img, w, h, uvX + sz + sx, uvY + sz, sz, sy, right_c)
+    # 背面(+Z): (uvX+2*sz+sx, uvY+sz) size (sx, sy)
+    fill_rect(img, w, h, uvX + 2 * sz + sx, uvY + sz, sx, sy, back_c)
+
+
 def generate_pig_texture(base_dir):
-    """猪皮肤 64x32 — MC标准布局"""
-    w, h = 64, 32
+    """猪皮肤 64x64 — 严格匹配C++模型UV布局
+    C++: 头部 size={8,8,8} UV(0,0), 身体 size={8,8,10} UV(0,16), 腿 size={4,6,4} UV(0,34)
+    """
+    w, h = 64, 64
     img = make_image(w, h)
 
-    # 头部 (8x8) — 位于纹理 (0,0)-(7,7) 区域
-    # 头顶 (8x8 at 8,0)
-    fill_rect(img, w, h, 8, 0, 8, 8, PIG_PINK)
-    # 头正面 (8x8 at 8,8)
-    fill_rect(img, w, h, 8, 8, 8, 8, PIG_PINK)
-    # 鼻子区域
+    # 头部 (sx=8, sy=8, sz=8) UV(0,0) -> 展开32x16 占用x=[0,32) y=[0,16)
+    draw_cuboid_uv(img, w, h, 0, 0, 8, 8, 8,
+                   PIG_PINK, PIG_PINK_DARK, PIG_PINK, PIG_PINK_DARK, PIG_PINK_DARK, PIG_PINK_DARK)
+    # 头部细节：鼻子、眼睛（在正面上）
+    # 正面位于 (uvX+sz, uvY+sz) = (8, 8), 大小 8x8
     fill_rect(img, w, h, 10, 12, 4, 3, PIG_NOSE)
     fill_rect(img, w, h, 11, 13, 2, 1, PIG_NOSE_DARK)
-    # 眼睛
-    set_pixel(img, w, h, 10, 11, (255, 255, 255, 255))
-    set_pixel(img, w, h, 13, 11, (255, 255, 255, 255))
     set_pixel(img, w, h, 10, 11, (28, 28, 28, 255))
     set_pixel(img, w, h, 13, 11, (28, 28, 28, 255))
-    # 头左面 (8x8 at 0,8)
-    fill_rect(img, w, h, 0, 8, 8, 8, PIG_PINK_DARK)
-    # 头右面 (8x8 at 16,8)
-    fill_rect(img, w, h, 16, 8, 8, 8, PIG_PINK_DARK)
-    # 头后面 (8x8 at 24,8)
-    fill_rect(img, w, h, 24, 8, 8, 8, PIG_PINK_DARK)
-    # 头底面 (8x8 at 16,0)
-    fill_rect(img, w, h, 16, 0, 8, 8, PIG_PINK_DARK)
 
-    # 身体 (8x16 展开) — 位于 (28,16) 区域
-    # 身体顶面 (8x16 at 28,16) — 实际上MC猪身体是 10x8x16
-    fill_rect(img, w, h, 28, 16, 10, 16, PIG_PINK)
-    fill_rect(img, w, h, 38, 16, 8, 16, PIG_PINK_DARK)
+    # 身体 (sx=8, sy=8, sz=10) UV(0,16) -> 展开36x18 占用x=[0,36) y=[16,34)
+    draw_cuboid_uv(img, w, h, 0, 16, 8, 8, 10,
+                   PIG_PINK, PIG_PINK_DARK, PIG_PINK, PIG_PINK_DARK, PIG_PINK_DARK, PIG_PINK_DARK)
 
-    # 腿 (4x6) — 4条腿
-    # 前左腿 (at 0,16)
-    fill_rect(img, w, h, 0, 16, 4, 6, PIG_PINK)
-    fill_rect(img, w, h, 4, 16, 4, 6, PIG_PINK_DARK)
-    fill_rect(img, w, h, 0, 22, 4, 6, PIG_PINK)
-    fill_rect(img, w, h, 4, 22, 4, 6, PIG_PINK_DARK)
+    # 腿 (sx=4, sy=6, sz=4) UV(0,34) -> 展开16x10 占用x=[0,16) y=[34,44)
+    draw_cuboid_uv(img, w, h, 0, 34, 4, 6, 4,
+                   PIG_PINK, PIG_PINK_DARK, PIG_PINK, PIG_PINK_DARK, PIG_PINK_DARK, PIG_PINK_DARK)
 
     write_png(os.path.join(base_dir, "mobs", "pig.png"), w, h, img)
 
 
 def generate_cow_texture(base_dir):
-    """牛皮肤 64x32"""
-    w, h = 64, 32
+    """牛皮肤 64x64 — 严格匹配C++模型UV布局
+    C++: 头部 size={8,8,8} UV(0,0), 身体 size={10,10,12} UV(0,16), 腿 size={4,12,4} UV(0,38)
+    """
+    w, h = 64, 64
     img = make_image(w, h)
 
-    # 头部
-    fill_rect(img, w, h, 0, 0, 8, 8, COW_WHITE)
-    fill_rect(img, w, h, 8, 0, 8, 8, COW_WHITE)
-    fill_rect(img, w, h, 8, 8, 8, 8, COW_WHITE)
-    # 棕色斑块
+    # 头部 (sx=8, sy=8, sz=8) UV(0,0) -> 展开32x16 占用x=[0,32) y=[0,16)
+    draw_cuboid_uv(img, w, h, 0, 0, 8, 8, 8,
+                   COW_WHITE, COW_GRAY, COW_WHITE, COW_DARK, COW_BROWN, COW_BROWN)
+    # 头部细节：斑块、眼睛、鼻子（在正面上，正面位于(8,8) 大小8x8）
     fill_rect(img, w, h, 9, 9, 2, 2, COW_BROWN)
     fill_rect(img, w, h, 13, 9, 2, 2, COW_BROWN)
-    # 眼睛
     set_pixel(img, w, h, 10, 11, (28, 28, 28, 255))
     set_pixel(img, w, h, 13, 11, (28, 28, 28, 255))
-    # 鼻子
     fill_rect(img, w, h, 10, 13, 4, 2, COW_GRAY)
-    # 头侧面
-    fill_rect(img, w, h, 0, 8, 8, 8, COW_BROWN)
-    fill_rect(img, w, h, 16, 8, 8, 8, COW_BROWN)
-    fill_rect(img, w, h, 24, 8, 8, 8, COW_DARK)
-    fill_rect(img, w, h, 16, 0, 8, 8, COW_GRAY)
 
-    # 身体 — 白色底+棕色斑块
-    fill_rect(img, w, h, 28, 16, 16, 16, COW_WHITE)
-    fill_rect(img, w, h, 44, 16, 16, 16, COW_BROWN)
-    # 斑块
-    fill_rect(img, w, h, 30, 18, 4, 4, COW_BROWN)
-    fill_rect(img, w, h, 36, 22, 3, 3, COW_BROWN)
+    # 身体 (sx=10, sy=10, sz=12) UV(0,16) -> 展开44x22 占用x=[0,44) y=[16,38)
+    draw_cuboid_uv(img, w, h, 0, 16, 10, 10, 12,
+                   COW_WHITE, COW_GRAY, COW_WHITE, COW_DARK, COW_BROWN, COW_BROWN)
+    # 身体斑块（在正面上，正面位于(0+12,16+12)=(12,28) 大小10x10）
+    fill_rect(img, w, h, 13, 30, 4, 4, COW_BROWN)
+    fill_rect(img, w, h, 18, 33, 3, 3, COW_BROWN)
 
-    # 腿
-    fill_rect(img, w, h, 0, 16, 8, 16, COW_WHITE)
-    fill_rect(img, w, h, 8, 16, 8, 16, COW_BROWN)
+    # 腿 (sx=4, sy=12, sz=4) UV(0,38) -> 展开16x16 占用x=[0,16) y=[38,54)
+    draw_cuboid_uv(img, w, h, 0, 38, 4, 12, 4,
+                   COW_WHITE, COW_GRAY, COW_WHITE, COW_DARK, COW_BROWN, COW_BROWN)
 
     write_png(os.path.join(base_dir, "mobs", "cow.png"), w, h, img)
 
 
 def generate_sheep_texture(base_dir):
-    """羊皮肤 64x32"""
-    w, h = 64, 32
+    """羊皮肤 64x64 — 严格匹配C++模型UV布局
+    C++: 头部 size={6,6,6} UV(0,0), 身体 size={8,8,10} UV(0,12), 腿 size={4,6,4} UV(0,30)
+    """
+    w, h = 64, 64
     img = make_image(w, h)
 
-    # 头部 — 灰褐色
-    fill_rect(img, w, h, 0, 0, 8, 8, SHEEP_FACE)
-    fill_rect(img, w, h, 8, 0, 8, 8, SHEEP_FACE)
-    fill_rect(img, w, h, 8, 8, 8, 8, SHEEP_FACE)
-    fill_rect(img, w, h, 0, 8, 8, 8, SHEEP_FACE_DARK)
-    fill_rect(img, w, h, 16, 8, 8, 8, SHEEP_FACE_DARK)
-    fill_rect(img, w, h, 24, 8, 8, 8, SHEEP_FACE_DARK)
-    fill_rect(img, w, h, 16, 0, 8, 8, SHEEP_FACE_DARK)
-    # 眼睛
-    set_pixel(img, w, h, 10, 11, (28, 28, 28, 255))
-    set_pixel(img, w, h, 13, 11, (28, 28, 28, 255))
+    # 头部 (sx=6, sy=6, sz=6) UV(0,0) -> 展开24x12 占用x=[0,24) y=[0,12)
+    draw_cuboid_uv(img, w, h, 0, 0, 6, 6, 6,
+                   SHEEP_FACE, SHEEP_FACE_DARK, SHEEP_FACE, SHEEP_FACE_DARK, SHEEP_FACE_DARK, SHEEP_FACE_DARK)
+    # 头部细节：眼睛（正面位于(6,6) 大小6x6）
+    set_pixel(img, w, h, 7, 8, (28, 28, 28, 255))
+    set_pixel(img, w, h, 10, 8, (28, 28, 28, 255))
 
-    # 身体 — 白色羊毛
-    fill_rect(img, w, h, 28, 16, 16, 16, SHEEP_WHITE)
-    fill_rect(img, w, h, 44, 16, 16, 16, SHEEP_GRAY)
+    # 身体 (sx=8, sy=8, sz=10) UV(0,12) -> 展开36x18 占用x=[0,36) y=[12,30)
+    draw_cuboid_uv(img, w, h, 0, 12, 8, 8, 10,
+                   SHEEP_WHITE, SHEEP_GRAY, SHEEP_WHITE, SHEEP_GRAY, SHEEP_GRAY, SHEEP_GRAY)
 
-    # 腿
-    fill_rect(img, w, h, 0, 16, 8, 16, SHEEP_FACE)
-    fill_rect(img, w, h, 8, 16, 8, 16, SHEEP_FACE_DARK)
+    # 腿 (sx=4, sy=6, sz=4) UV(0,30) -> 展开16x10 占用x=[0,16) y=[30,40)
+    draw_cuboid_uv(img, w, h, 0, 30, 4, 6, 4,
+                   SHEEP_FACE, SHEEP_FACE_DARK, SHEEP_FACE, SHEEP_FACE_DARK, SHEEP_FACE_DARK, SHEEP_FACE_DARK)
 
     write_png(os.path.join(base_dir, "mobs", "sheep.png"), w, h, img)
 
 
 def generate_chicken_texture(base_dir):
-    """鸡皮肤 64x32"""
+    """鸡皮肤 64x32 — 严格匹配C++模型UV布局
+    C++: 头部 size={4,6,3} UV(0,0), 身体 size={6,6,6} UV(0,9), 腿 size={3,5,3} UV(26,0)
+    """
     w, h = 64, 32
     img = make_image(w, h)
 
-    # 头部 — 白色
-    fill_rect(img, w, h, 0, 0, 8, 8, CHICKEN_WHITE)
-    fill_rect(img, w, h, 8, 0, 8, 8, CHICKEN_WHITE)
-    fill_rect(img, w, h, 8, 8, 8, 8, CHICKEN_WHITE)
-    fill_rect(img, w, h, 0, 8, 8, 8, CHICKEN_WHITE)
-    fill_rect(img, w, h, 16, 8, 8, 8, CHICKEN_WHITE)
-    # 眼睛
-    set_pixel(img, w, h, 10, 10, (28, 28, 28, 255))
-    set_pixel(img, w, h, 13, 10, (28, 28, 28, 255))
+    # 头部 (sx=4, sy=6, sz=3) UV(0,0)
+    # 展开宽=2*3+2*4=14, 展开高=3+6=9
+    draw_cuboid_uv(img, w, h, 0, 0, 4, 6, 3,
+                   CHICKEN_WHITE, CHICKEN_WHITE, CHICKEN_WHITE, CHICKEN_WHITE, CHICKEN_WHITE, CHICKEN_WHITE)
+    # 头部细节：眼睛（正面位于(3,3) 大小4x6）
+    set_pixel(img, w, h, 3, 4, (28, 28, 28, 255))
+    set_pixel(img, w, h, 6, 4, (28, 28, 28, 255))
     # 喙
-    fill_rect(img, w, h, 11, 12, 2, 1, CHICKEN_YELLOW)
-    # 鸡冠
-    fill_rect(img, w, h, 11, 8, 2, 2, CHICKEN_RED)
+    fill_rect(img, w, h, 4, 6, 2, 1, CHICKEN_YELLOW)
+    # 鸡冠（在正面顶部）
+    fill_rect(img, w, h, 4, 3, 2, 1, CHICKEN_RED)
     # 肉垂
-    set_pixel(img, w, h, 12, 14, CHICKEN_RED)
+    set_pixel(img, w, h, 5, 8, CHICKEN_RED)
 
-    # 身体
-    fill_rect(img, w, h, 28, 16, 16, 16, CHICKEN_WHITE)
-    fill_rect(img, w, h, 44, 16, 16, 16, CHICKEN_WHITE)
+    # 身体 (sx=6, sy=6, sz=6) UV(0,9)
+    # 展开宽=2*6+2*6=24, 展开高=6+6=12
+    draw_cuboid_uv(img, w, h, 0, 9, 6, 6, 6,
+                   CHICKEN_WHITE, CHICKEN_WHITE, CHICKEN_WHITE, CHICKEN_WHITE, CHICKEN_WHITE, CHICKEN_WHITE)
 
-    # 腿 — 黄色
-    fill_rect(img, w, h, 0, 16, 8, 16, CHICKEN_ORANGE)
-    fill_rect(img, w, h, 8, 16, 8, 16, CHICKEN_ORANGE)
-
-    # 翅膀区域
-    fill_rect(img, w, h, 24, 8, 8, 8, CHICKEN_WHITE)
+    # 腿 (sx=3, sy=5, sz=3) UV(26,0)
+    # 展开宽=2*3+2*3=12, 展开高=3+5=8
+    draw_cuboid_uv(img, w, h, 26, 0, 3, 5, 3,
+                   CHICKEN_ORANGE, CHICKEN_ORANGE, CHICKEN_ORANGE, CHICKEN_ORANGE, CHICKEN_ORANGE, CHICKEN_ORANGE)
 
     write_png(os.path.join(base_dir, "mobs", "chicken.png"), w, h, img)
 

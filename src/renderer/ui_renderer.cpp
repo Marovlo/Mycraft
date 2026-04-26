@@ -1,5 +1,38 @@
 #include "ui_renderer.h"
 
+// 将字符映射到字体 tile 名称，返回空字符串表示跳过（空格等）
+static std::string charToTileName(char ch) {
+    if (ch >= 'A' && ch <= 'Z')
+        return std::string("font_letter_") + static_cast<char>(ch - 'A' + 'a');
+    if (ch >= 'a' && ch <= 'z')
+        return std::string("font_letter_") + ch;
+    if (ch >= '0' && ch <= '9')
+        return std::string("font_digit_") + ch;
+    switch (ch) {
+        case '/':  return "font_slash";
+        case '.':  return "font_dot";
+        case '-':  return "font_minus";
+        case '_':  return "font_underscore";
+        case ':':  return "font_colon";
+        case ',':  return "font_comma";
+        case '(':  return "font_lparen";
+        case ')':  return "font_rparen";
+        case '~':  return "font_tilde";
+        case '@':  return "font_at";
+        case '#':  return "font_hash";
+        case '+':  return "font_plus";
+        case '=':  return "font_equal";
+        case '!':  return "font_excl";
+        case '?':  return "font_question";
+        case '>':  return "font_gt";
+        case '<':  return "font_lt";
+        case ';':  return "font_semicolon";
+        case '[':  return "font_lbracket";
+        case ']':  return "font_rbracket";
+        default:   return ""; // 空格或未知字符 → 跳过
+    }
+}
+
 void UIRenderer::init(VulkanEngine* engine) {
     engine_ = engine;
 
@@ -141,15 +174,8 @@ void UIRenderer::drawText(const std::string& text, float centerX, float y, float
 
     float cx = startX;
     for (char ch : text) {
-        std::string tileName;
-        if (ch >= 'A' && ch <= 'Z') {
-            tileName = std::string("font_letter_") + static_cast<char>(ch - 'A' + 'a');
-        } else if (ch >= 'a' && ch <= 'z') {
-            tileName = std::string("font_letter_") + ch;
-        } else if (ch >= '0' && ch <= '9') {
-            tileName = std::string("font_digit_") + ch;
-        } else {
-            // Space or unknown — skip
+        std::string tileName = charToTileName(ch);
+        if (tileName.empty()) {
             cx += advance;
             continue;
         }
@@ -177,14 +203,8 @@ void UIRenderer::drawTextLeft(const std::string& text, float leftX, float y, flo
 
     float cx = leftX;
     for (char ch : text) {
-        std::string tileName;
-        if (ch >= 'A' && ch <= 'Z') {
-            tileName = std::string("font_letter_") + static_cast<char>(ch - 'A' + 'a');
-        } else if (ch >= 'a' && ch <= 'z') {
-            tileName = std::string("font_letter_") + ch;
-        } else if (ch >= '0' && ch <= '9') {
-            tileName = std::string("font_digit_") + ch;
-        } else {
+        std::string tileName = charToTileName(ch);
+        if (tileName.empty()) {
             cx += advance;
             continue;
         }
