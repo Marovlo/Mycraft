@@ -15,93 +15,143 @@ namespace fs = std::filesystem;
 // ========== 模型注册 ==========
 
 void MobRenderer::registerModels() {
-    // 猪 — 四足动物
-    auto& pig = models_[static_cast<int>(MobType::Pig)];
-    pig.type = MobType::Pig; pig.textureName = "pig"; pig.texWidth = 64; pig.texHeight = 32;
-    pig.head = {{-4, 8, -4}, {8, 8, 8}, {0, 8, 0}, 0, 0};
-    pig.body = {{-5, 2, -8}, {10, 8, 16}, {0, 6, 0}, 28, 8};
-    pig.legFrontLeft  = {{-5, -4, -6}, {4, 6, 4}, {-3, 2, -4}, 0, 16};
-    pig.legFrontRight = {{ 1, -4, -6}, {4, 6, 4}, { 3, 2, -4}, 0, 16};
-    pig.legBackLeft   = {{-5, -4,  4}, {4, 6, 4}, {-3, 2,  6}, 0, 16};
-    pig.legBackRight  = {{ 1, -4,  4}, {4, 6, 4}, { 3, 2,  6}, 0, 16};
-    pig.isHumanoid = false;
+    // ========== 猪 (Pig) ==========
+    // MC原版：身体 8x8x16, 头部 8x8x8 在身体前方, 腿 4x6x4
+    // 纹理 64x32: 头(0,0), 身体(28,0 -> width=8,height=8,depth=6), 腿(0,16)
+    // 坐标系：Y=上, Z=前进方向(正面), 模型中心在脚底
+    {
+        auto& pig = models_[static_cast<int>(MobType::Pig)];
+        pig.type = MobType::Pig; pig.textureName = "pig"; pig.texWidth = 64; pig.texHeight = 32;
+        // 身体：宽8 高8 长16，中心在 (0, 11, 0)，底部Y=7，顶部Y=15
+        pig.body = {{-4, 7, -5}, {8, 8, 10}, {0, 11, 0}, 28, 0};
+        // 头部：8x8x8，在身体前方（-Z方向），中心连接身体前端
+        pig.head = {{-4, 7, -13}, {8, 8, 8}, {0, 11, -5}, 0, 0};
+        // 四条腿：4x6x4 的柱子，从身体底部(Y=7)向下延伸到地面(Y=1)
+        pig.legFrontLeft  = {{-4, 1, -4}, {4, 6, 4}, {-2, 7, -3}, 0, 16};
+        pig.legFrontRight = {{ 0, 1, -4}, {4, 6, 4}, { 2, 7, -3}, 0, 16};
+        pig.legBackLeft   = {{-4, 1,  0}, {4, 6, 4}, {-2, 7,  2}, 0, 16};
+        pig.legBackRight  = {{ 0, 1,  0}, {4, 6, 4}, { 2, 7,  2}, 0, 16};
+        pig.isHumanoid = false;
+    }
 
-    // 牛
-    auto& cow = models_[static_cast<int>(MobType::Cow)];
-    cow.type = MobType::Cow; cow.textureName = "cow"; cow.texWidth = 64; cow.texHeight = 32;
-    cow.head = {{-4, 10, -4}, {8, 8, 8}, {0, 14, 0}, 0, 0};
-    cow.body = {{-6, 2, -8}, {12, 10, 18}, {0, 7, 0}, 18, 4};
-    cow.legFrontLeft  = {{-6, -6, -6}, {4, 8, 4}, {-4, 2, -4}, 0, 16};
-    cow.legFrontRight = {{ 2, -6, -6}, {4, 8, 4}, { 4, 2, -4}, 0, 16};
-    cow.legBackLeft   = {{-6, -6,  6}, {4, 8, 4}, {-4, 2,  8}, 0, 16};
-    cow.legBackRight  = {{ 2, -6,  6}, {4, 8, 4}, { 4, 2,  8}, 0, 16};
-    cow.isHumanoid = false;
+    // ========== 牛 (Cow) ==========
+    // MC原版：身体 12x10x18, 头部 8x8x8 在身体前方, 腿 4x12x4
+    // 纹理 64x32
+    {
+        auto& cow = models_[static_cast<int>(MobType::Cow)];
+        cow.type = MobType::Cow; cow.textureName = "cow"; cow.texWidth = 64; cow.texHeight = 32;
+        // 身体：宽10 高10 长16，底部Y=12，顶部Y=22
+        cow.body = {{-5, 12, -6}, {10, 10, 12}, {0, 17, 0}, 18, 0};
+        // 头部：8x8x8，在身体前方
+        cow.head = {{-4, 12, -14}, {8, 8, 8}, {0, 16, -6}, 0, 0};
+        // 四条腿：4x12x4
+        cow.legFrontLeft  = {{-5, 0, -5}, {4, 12, 4}, {-3, 12, -4}, 0, 16};
+        cow.legFrontRight = {{ 1, 0, -5}, {4, 12, 4}, { 3, 12, -4}, 0, 16};
+        cow.legBackLeft   = {{-5, 0,  3}, {4, 12, 4}, {-3, 12,  4}, 0, 16};
+        cow.legBackRight  = {{ 1, 0,  3}, {4, 12, 4}, { 3, 12,  4}, 0, 16};
+        cow.isHumanoid = false;
+    }
 
-    // 羊
-    auto& sheep = models_[static_cast<int>(MobType::Sheep)];
-    sheep.type = MobType::Sheep; sheep.textureName = "sheep"; sheep.texWidth = 64; sheep.texHeight = 32;
-    sheep.head = {{-3, 9, -3}, {6, 6, 6}, {0, 12, 0}, 0, 0};
-    sheep.body = {{-5, 2, -7}, {10, 8, 16}, {0, 6, 0}, 28, 8};
-    sheep.legFrontLeft  = {{-5, -4, -5}, {4, 6, 4}, {-3, 2, -3}, 0, 16};
-    sheep.legFrontRight = {{ 1, -4, -5}, {4, 6, 4}, { 3, 2, -3}, 0, 16};
-    sheep.legBackLeft   = {{-5, -4,  5}, {4, 6, 4}, {-3, 2,  7}, 0, 16};
-    sheep.legBackRight  = {{ 1, -4,  5}, {4, 6, 4}, { 3, 2,  7}, 0, 16};
-    sheep.isHumanoid = false;
+    // ========== 羊 (Sheep) ==========
+    // MC原版：身体 10x8x16, 头部 6x6x6 在身体前方, 腿 4x6x4
+    {
+        auto& sheep = models_[static_cast<int>(MobType::Sheep)];
+        sheep.type = MobType::Sheep; sheep.textureName = "sheep"; sheep.texWidth = 64; sheep.texHeight = 32;
+        // 身体
+        sheep.body = {{-4, 7, -5}, {8, 8, 10}, {0, 11, 0}, 28, 0};
+        // 头部：6x6x6
+        sheep.head = {{-3, 8, -11}, {6, 6, 6}, {0, 11, -5}, 0, 0};
+        // 四条腿
+        sheep.legFrontLeft  = {{-4, 1, -4}, {4, 6, 4}, {-2, 7, -3}, 0, 16};
+        sheep.legFrontRight = {{ 0, 1, -4}, {4, 6, 4}, { 2, 7, -3}, 0, 16};
+        sheep.legBackLeft   = {{-4, 1,  0}, {4, 6, 4}, {-2, 7,  2}, 0, 16};
+        sheep.legBackRight  = {{ 0, 1,  0}, {4, 6, 4}, { 2, 7,  2}, 0, 16};
+        sheep.isHumanoid = false;
+    }
 
-    // 鸡
-    auto& chicken = models_[static_cast<int>(MobType::Chicken)];
-    chicken.type = MobType::Chicken; chicken.textureName = "chicken"; chicken.texWidth = 64; chicken.texHeight = 32;
-    chicken.head = {{-2, 6, -2}, {4, 4, 4}, {0, 8, 0}, 0, 0};
-    chicken.body = {{-3, 0, -4}, {6, 6, 8}, {0, 3, 0}, 0, 8};
-    chicken.legFrontLeft  = {{-2, -3, -1}, {2, 3, 2}, {-1, 0, 0}, 0, 16};
-    chicken.legFrontRight = {{ 0, -3, -1}, {2, 3, 2}, { 1, 0, 0}, 0, 16};
-    chicken.legBackLeft   = {{-2, -3, -1}, {2, 3, 2}, {-1, 0, 0}, 0, 16};
-    chicken.legBackRight  = {{ 0, -3, -1}, {2, 3, 2}, { 1, 0, 0}, 0, 16};
-    chicken.isHumanoid = false;
+    // ========== 鸡 (Chicken) ==========
+    // MC原版：身体小，头部在前方，两条细腿
+    {
+        auto& chicken = models_[static_cast<int>(MobType::Chicken)];
+        chicken.type = MobType::Chicken; chicken.textureName = "chicken"; chicken.texWidth = 64; chicken.texHeight = 32;
+        // 身体：6x6x8
+        chicken.body = {{-3, 5, -3}, {6, 6, 6}, {0, 8, 0}, 0, 9};
+        // 头部：4x6x3 在身体前方
+        chicken.head = {{-2, 7, -8}, {4, 6, 3}, {0, 10, -3}, 0, 0};
+        // 两条腿（鸡只有两条腿，前后腿共用同一位置）
+        chicken.legFrontLeft  = {{-2, 0, -1}, {3, 5, 3}, {-1, 5, 0}, 26, 0};
+        chicken.legFrontRight = {{ 0, 0, -1}, {3, 5, 3}, { 1, 5, 0}, 26, 0};
+        chicken.legBackLeft   = {{-2, 0, -1}, {3, 5, 3}, {-1, 5, 0}, 26, 0};
+        chicken.legBackRight  = {{ 0, 0, -1}, {3, 5, 3}, { 1, 5, 0}, 26, 0};
+        chicken.isHumanoid = false;
+    }
 
-    // 僵尸 — 人形
-    auto& zombie = models_[static_cast<int>(MobType::Zombie)];
-    zombie.type = MobType::Zombie; zombie.textureName = "zombie"; zombie.texWidth = 64; zombie.texHeight = 64;
-    zombie.head = {{-4, 24, -4}, {8, 8, 8}, {0, 24, 0}, 0, 0};
-    zombie.body = {{-4, 12, -2}, {8, 12, 4}, {0, 18, 0}, 16, 16};
-    zombie.legFrontLeft  = {{-4, 0, -2}, {4, 12, 4}, {-2, 12, 0}, 0, 16};
-    zombie.legFrontRight = {{ 0, 0, -2}, {4, 12, 4}, { 2, 12, 0}, 0, 16};
-    zombie.armLeft  = {{-8, 12, -2}, {4, 12, 4}, {-6, 22, 0}, 40, 16};
-    zombie.armRight = {{ 4, 12, -2}, {4, 12, 4}, { 6, 22, 0}, 40, 16};
-    zombie.isHumanoid = true; zombie.hasArms = true;
+    // ========== 僵尸 (Zombie) ==========
+    // MC原版：人形，头在身体上方，两条腿+两条手臂
+    {
+        auto& zombie = models_[static_cast<int>(MobType::Zombie)];
+        zombie.type = MobType::Zombie; zombie.textureName = "zombie"; zombie.texWidth = 64; zombie.texHeight = 64;
+        // 头部：8x8x8 在身体上方
+        zombie.head = {{-4, 24, -4}, {8, 8, 8}, {0, 24, 0}, 0, 0};
+        // 身体：8x12x4
+        zombie.body = {{-4, 12, -2}, {8, 12, 4}, {0, 18, 0}, 16, 16};
+        // 两条腿
+        zombie.legFrontLeft  = {{-4, 0, -2}, {4, 12, 4}, {-2, 12, 0}, 0, 16};
+        zombie.legFrontRight = {{ 0, 0, -2}, {4, 12, 4}, { 2, 12, 0}, 0, 16};
+        zombie.legBackLeft   = {{-4, 0, -2}, {4, 12, 4}, {-2, 12, 0}, 0, 32};
+        zombie.legBackRight  = {{ 0, 0, -2}, {4, 12, 4}, { 2, 12, 0}, 0, 32};
+        // 手臂
+        zombie.armLeft  = {{-8, 12, -2}, {4, 12, 4}, {-6, 22, 0}, 40, 16};
+        zombie.armRight = {{ 4, 12, -2}, {4, 12, 4}, { 6, 22, 0}, 32, 48};
+        zombie.isHumanoid = true; zombie.hasArms = true;
+    }
 
-    // 骷髅 — 人形
-    auto& skeleton = models_[static_cast<int>(MobType::Skeleton)];
-    skeleton.type = MobType::Skeleton; skeleton.textureName = "skeleton"; skeleton.texWidth = 64; skeleton.texHeight = 32;
-    skeleton.head = {{-4, 24, -4}, {8, 8, 8}, {0, 24, 0}, 0, 0};
-    skeleton.body = {{-4, 12, -2}, {8, 12, 4}, {0, 18, 0}, 16, 16};
-    skeleton.legFrontLeft  = {{-3, 0, -1}, {2, 12, 2}, {-2, 12, 0}, 0, 16};
-    skeleton.legFrontRight = {{ 1, 0, -1}, {2, 12, 2}, { 2, 12, 0}, 0, 16};
-    skeleton.armLeft  = {{-7, 12, -1}, {2, 12, 2}, {-5, 22, 0}, 40, 16};
-    skeleton.armRight = {{ 5, 12, -1}, {2, 12, 2}, { 5, 22, 0}, 40, 16};
-    skeleton.isHumanoid = true; skeleton.hasArms = true;
+    // ========== 骷髅 (Skeleton) ==========
+    // MC原版：人形，细骨骼
+    {
+        auto& skeleton = models_[static_cast<int>(MobType::Skeleton)];
+        skeleton.type = MobType::Skeleton; skeleton.textureName = "skeleton"; skeleton.texWidth = 64; skeleton.texHeight = 32;
+        skeleton.head = {{-4, 24, -4}, {8, 8, 8}, {0, 24, 0}, 0, 0};
+        skeleton.body = {{-4, 12, -2}, {8, 12, 4}, {0, 18, 0}, 16, 16};
+        skeleton.legFrontLeft  = {{-3, 0, -1}, {2, 12, 2}, {-2, 12, 0}, 0, 16};
+        skeleton.legFrontRight = {{ 1, 0, -1}, {2, 12, 2}, { 2, 12, 0}, 0, 16};
+        skeleton.legBackLeft   = {{-3, 0, -1}, {2, 12, 2}, {-2, 12, 0}, 0, 16};
+        skeleton.legBackRight  = {{ 1, 0, -1}, {2, 12, 2}, { 2, 12, 0}, 0, 16};
+        skeleton.armLeft  = {{-7, 12, -1}, {2, 12, 2}, {-5, 22, 0}, 40, 16};
+        skeleton.armRight = {{ 5, 12, -1}, {2, 12, 2}, { 5, 22, 0}, 40, 16};
+        skeleton.isHumanoid = true; skeleton.hasArms = true;
+    }
 
-    // 蜘蛛 — 特殊体型
-    auto& spider = models_[static_cast<int>(MobType::Spider)];
-    spider.type = MobType::Spider; spider.textureName = "spider"; spider.texWidth = 64; spider.texHeight = 32;
-    spider.head = {{-4, 2, -8}, {8, 8, 8}, {0, 6, -4}, 32, 4};
-    spider.body = {{-5, 2, -3}, {10, 8, 12}, {0, 6, 3}, 0, 0};
-    spider.legFrontLeft  = {{-7, 0, -6}, {2, 4, 2}, {-6, 4, -5}, 0, 16};
-    spider.legFrontRight = {{ 5, 0, -6}, {2, 4, 2}, { 6, 4, -5}, 0, 16};
-    spider.legBackLeft   = {{-7, 0,  4}, {2, 4, 2}, {-6, 4,  5}, 0, 16};
-    spider.legBackRight  = {{ 5, 0,  4}, {2, 4, 2}, { 6, 4,  5}, 0, 16};
-    spider.isHumanoid = false;
+    // ========== 蜘蛛 (Spider) ==========
+    // MC原版：扁平宽体，头在前方，8条腿（简化为4对）
+    {
+        auto& spider = models_[static_cast<int>(MobType::Spider)];
+        spider.type = MobType::Spider; spider.textureName = "spider"; spider.texWidth = 64; spider.texHeight = 32;
+        // 头部在身体前方
+        spider.head = {{-4, 3, -11}, {8, 8, 8}, {0, 7, -3}, 32, 4};
+        // 身体：宽10 高8 长12
+        spider.body = {{-5, 3, -3}, {10, 8, 12}, {0, 7, 3}, 0, 0};
+        // 四对腿（简化）
+        spider.legFrontLeft  = {{-8, 0, -6}, {2, 6, 2}, {-6, 5, -5}, 0, 16};
+        spider.legFrontRight = {{ 6, 0, -6}, {2, 6, 2}, { 6, 5, -5}, 0, 16};
+        spider.legBackLeft   = {{-8, 0,  4}, {2, 6, 2}, {-6, 5,  5}, 0, 16};
+        spider.legBackRight  = {{ 6, 0,  4}, {2, 6, 2}, { 6, 5,  5}, 0, 16};
+        spider.isHumanoid = false;
+    }
 
-    // 苦力怕 — 四足但无头
-    auto& creeper = models_[static_cast<int>(MobType::Creeper)];
-    creeper.type = MobType::Creeper; creeper.textureName = "creeper"; creeper.texWidth = 64; creeper.texHeight = 32;
-    creeper.head = {{-4, 14, -4}, {8, 8, 8}, {0, 18, 0}, 0, 0};
-    creeper.body = {{-4, 2, -2}, {8, 12, 4}, {0, 8, 0}, 16, 16};
-    creeper.legFrontLeft  = {{-4, -4, -4}, {4, 6, 4}, {-2, 2, -2}, 0, 16};
-    creeper.legFrontRight = {{ 0, -4, -4}, {4, 6, 4}, { 2, 2, -2}, 0, 16};
-    creeper.legBackLeft   = {{-4, -4,  0}, {4, 6, 4}, {-2, 2,  2}, 0, 16};
-    creeper.legBackRight  = {{ 0, -4,  0}, {4, 6, 4}, { 2, 2,  2}, 0, 16};
-    creeper.isHumanoid = false;
+    // ========== 苦力怕 (Creeper) ==========
+    // MC原版：头在身体上方，四条短腿，无手臂
+    {
+        auto& creeper = models_[static_cast<int>(MobType::Creeper)];
+        creeper.type = MobType::Creeper; creeper.textureName = "creeper"; creeper.texWidth = 64; creeper.texHeight = 32;
+        creeper.head = {{-4, 18, -4}, {8, 8, 8}, {0, 18, 0}, 0, 0};
+        creeper.body = {{-4, 6, -2}, {8, 12, 4}, {0, 12, 0}, 16, 16};
+        creeper.legFrontLeft  = {{-4, 0, -4}, {4, 6, 4}, {-2, 6, -2}, 0, 16};
+        creeper.legFrontRight = {{ 0, 0, -4}, {4, 6, 4}, { 2, 6, -2}, 0, 16};
+        creeper.legBackLeft   = {{-4, 0,  0}, {4, 6, 4}, {-2, 6,  2}, 0, 16};
+        creeper.legBackRight  = {{ 0, 0,  0}, {4, 6, 4}, { 2, 6,  2}, 0, 16};
+        creeper.isHumanoid = false;
+    }
 }
 
 // ========== 初始化 / 销毁 ==========
@@ -306,10 +356,15 @@ void MobRenderer::appendMobMesh(const MobEntity& mob, float partialTick, float s
         light = 2.0f + skyLightFactor;  // 着色器中 light > 1.5 触发红色混合
     }
 
-    // 死亡动画：绕X轴旋转
+    // 死亡动画：绕Z轴旋转倒地，使用 partialTick 平滑插值
     float deathAngle = 0.0f;
     if (mob.isDying) {
-        deathAngle = (static_cast<float>(mob.deathTicks) / 20.0f) * 1.5708f;  // 90度
+        // 用 partialTick 在两个 tick 之间插值，消除阶梯感
+        float smoothDeathTicks = static_cast<float>(mob.deathTicks) + partialTick;
+        float progress = std::min(smoothDeathTicks / 20.0f, 1.0f);
+        // 使用 smoothstep 缓动函数让倒地动画更自然（先慢后快再慢）
+        float eased = progress * progress * (3.0f - 2.0f * progress);
+        deathAngle = eased * 1.5708f;  // 最终倒地90度
     }
 
     // 缩放因子：将像素坐标转换为方块坐标 (1/16)
