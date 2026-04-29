@@ -145,14 +145,14 @@ public:
     glm::vec3 getHitboxMin() const {
         // 脚底位置 = position.y - mobHeight/2
         float feetY = position.y - mobHeight * 0.5f;
-        // 水平方向比碰撞箱大，确保头部和尾部都能被命中
-        float hitW = mobWidth * 0.8f;
-        return glm::vec3(position.x - hitW, feetY, position.z - hitW);
+        // 水平方向用碰撞箱宽度，上下方向额外扩展确保头部可命中
+        float hitW = mobWidth * 0.5f + 0.15f;
+        return glm::vec3(position.x - hitW, feetY - 0.1f, position.z - hitW);
     }
     glm::vec3 getHitboxMax() const {
-        // 头顶位置 = position.y + mobHeight/2，再额外加一点余量
-        float topY = position.y + mobHeight * 0.5f + 0.1f;
-        float hitW = mobWidth * 0.8f;
+        // 头顶位置 = position.y + mobHeight/2，再额外加余量覆盖头部上方
+        float topY = position.y + mobHeight * 0.5f + 0.3f;
+        float hitW = mobWidth * 0.5f + 0.15f;
         return glm::vec3(position.x + hitW, topY, position.z + hitW);
     }
 
@@ -169,7 +169,8 @@ private:
 
     // AI 辅助
     bool canSeePlayer(const World& world, const Player& player) const;
-    void moveToward(const glm::vec3& target, float speed);
+    void moveToward(const glm::vec3& target, float speed, World* world = nullptr);
     void moveAlongPath(float speed);
     bool tryJump();
+
 };

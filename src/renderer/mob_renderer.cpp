@@ -16,57 +16,57 @@ namespace fs = std::filesystem;
 
 void MobRenderer::registerModels() {
     // ========== 猪 (Pig) ==========
-    // MC原版：身体 8x8x16, 头部 8x8x8 在身体前方, 腿 4x6x4
-    // 纹理 64x64: 头(0,0)展开32x16, 身体(0,16)展开36x18, 腿(0,34)展开16x10
+    // MC原版：身体较长, 头部比身体窄, 腿 4x6x4
+    // 纹理 64x64: 头(0,0)展开24x12, 身体(0,12)展开44x22, 腿(0,34)展开16x10
     // 坐标系：Y=上, Z=前进方向(正面), 模型中心在脚底
     {
         auto& pig = models_[static_cast<int>(MobType::Pig)];
         pig.type = MobType::Pig; pig.textureName = "pig"; pig.texWidth = 64; pig.texHeight = 64;
-        // 身体：宽8 高8 长10，中心在 (0, 11, 0)，底部Y=7，顶部Y=15
-        pig.body = {{-4, 7, -5}, {8, 8, 10}, {0, 11, 0}, 0, 16};
-        // 头部：8x8x8，在身体前方（-Z方向），中心连接身体前端
-        pig.head = {{-4, 7, -13}, {8, 8, 8}, {0, 11, -5}, 0, 0};
+        // 身体：宽8 高8 长14，中心在 (0, 11, 0)，底部Y=7，顶部Y=15
+        pig.body = {{-4, 7, -7}, {8, 8, 14}, {0, 11, 0}, 0, 12};
+        // 头部：6x6x6，在身体前方（-Z方向），比身体窄
+        pig.head = {{-3, 8, -13}, {6, 6, 6}, {0, 11, -7}, 0, 0};
         // 四条腿：4x6x4 的柱子，从身体底部(Y=7)向下延伸到地面(Y=1)
-        pig.legFrontLeft  = {{-4, 1, -4}, {4, 6, 4}, {-2, 7, -3}, 0, 34};
-        pig.legFrontRight = {{ 0, 1, -4}, {4, 6, 4}, { 2, 7, -3}, 0, 34};
-        pig.legBackLeft   = {{-4, 1,  0}, {4, 6, 4}, {-2, 7,  2}, 0, 34};
-        pig.legBackRight  = {{ 0, 1,  0}, {4, 6, 4}, { 2, 7,  2}, 0, 34};
+        pig.legFrontLeft  = {{-4, 1, -6}, {4, 6, 4}, {-2, 7, -5}, 0, 34};
+        pig.legFrontRight = {{ 0, 1, -6}, {4, 6, 4}, { 2, 7, -5}, 0, 34};
+        pig.legBackLeft   = {{-4, 1,  2}, {4, 6, 4}, {-2, 7,  4}, 0, 34};
+        pig.legBackRight  = {{ 0, 1,  2}, {4, 6, 4}, { 2, 7,  4}, 0, 34};
         pig.isHumanoid = false;
     }
 
     // ========== 牛 (Cow) ==========
-    // MC原版：身体 12x10x18, 头部 8x8x8 在身体前方, 腿 4x12x4
-    // 纹理 64x64: 头(0,0)展开32x16, 身体(0,16)展开44x22, 腿(0,38)展开16x16
+    // MC原版：身体较长, 头部 8x8x8 在身体前方, 腿 4x12x4
+    // 纹理 64x64: 头(0,0)展开32x16, 身体(0,16)展开52x26, 腿(0,42)展开16x16
     {
         auto& cow = models_[static_cast<int>(MobType::Cow)];
         cow.type = MobType::Cow; cow.textureName = "cow"; cow.texWidth = 64; cow.texHeight = 64;
-        // 身体：宽10 高10 长12，底部Y=12，顶部Y=22
-        cow.body = {{-5, 12, -6}, {10, 10, 12}, {0, 17, 0}, 0, 16};
+        // 身体：宽10 高10 长16，底部Y=12，顶部Y=22
+        cow.body = {{-5, 12, -8}, {10, 10, 16}, {0, 17, 0}, 0, 16};
         // 头部：8x8x8，在身体前方
-        cow.head = {{-4, 12, -14}, {8, 8, 8}, {0, 16, -6}, 0, 0};
+        cow.head = {{-4, 12, -16}, {8, 8, 8}, {0, 16, -8}, 0, 0};
         // 四条腿：4x12x4
-        cow.legFrontLeft  = {{-5, 0, -5}, {4, 12, 4}, {-3, 12, -4}, 0, 38};
-        cow.legFrontRight = {{ 1, 0, -5}, {4, 12, 4}, { 3, 12, -4}, 0, 38};
-        cow.legBackLeft   = {{-5, 0,  3}, {4, 12, 4}, {-3, 12,  4}, 0, 38};
-        cow.legBackRight  = {{ 1, 0,  3}, {4, 12, 4}, { 3, 12,  4}, 0, 38};
+        cow.legFrontLeft  = {{-5, 0, -7}, {4, 12, 4}, {-3, 12, -6}, 0, 42};
+        cow.legFrontRight = {{ 1, 0, -7}, {4, 12, 4}, { 3, 12, -6}, 0, 42};
+        cow.legBackLeft   = {{-5, 0,  5}, {4, 12, 4}, {-3, 12,  6}, 0, 42};
+        cow.legBackRight  = {{ 1, 0,  5}, {4, 12, 4}, { 3, 12,  6}, 0, 42};
         cow.isHumanoid = false;
     }
 
     // ========== 羊 (Sheep) ==========
-    // MC原版：身体 10x8x16, 头部 6x6x6 在身体前方, 腿 4x6x4
-    // 纹理 64x64: 头(0,0)展开24x12, 身体(0,12)展开36x18, 腿(0,30)展开16x10
+    // MC原版：身体较长蓬松, 头部 6x6x6 在身体前方, 腿 4x6x4
+    // 纹理 64x64: 头(0,0)展开24x12, 身体(0,12)展开44x22, 腿(0,34)展开16x10
     {
         auto& sheep = models_[static_cast<int>(MobType::Sheep)];
         sheep.type = MobType::Sheep; sheep.textureName = "sheep"; sheep.texWidth = 64; sheep.texHeight = 64;
-        // 身体
-        sheep.body = {{-4, 7, -5}, {8, 8, 10}, {0, 11, 0}, 0, 12};
+        // 身体：宽8 高8 长14
+        sheep.body = {{-4, 7, -7}, {8, 8, 14}, {0, 11, 0}, 0, 12};
         // 头部：6x6x6
-        sheep.head = {{-3, 8, -11}, {6, 6, 6}, {0, 11, -5}, 0, 0};
+        sheep.head = {{-3, 8, -13}, {6, 6, 6}, {0, 11, -7}, 0, 0};
         // 四条腿
-        sheep.legFrontLeft  = {{-4, 1, -4}, {4, 6, 4}, {-2, 7, -3}, 0, 30};
-        sheep.legFrontRight = {{ 0, 1, -4}, {4, 6, 4}, { 2, 7, -3}, 0, 30};
-        sheep.legBackLeft   = {{-4, 1,  0}, {4, 6, 4}, {-2, 7,  2}, 0, 30};
-        sheep.legBackRight  = {{ 0, 1,  0}, {4, 6, 4}, { 2, 7,  2}, 0, 30};
+        sheep.legFrontLeft  = {{-4, 1, -6}, {4, 6, 4}, {-2, 7, -5}, 0, 34};
+        sheep.legFrontRight = {{ 0, 1, -6}, {4, 6, 4}, { 2, 7, -5}, 0, 34};
+        sheep.legBackLeft   = {{-4, 1,  2}, {4, 6, 4}, {-2, 7,  4}, 0, 34};
+        sheep.legBackRight  = {{ 0, 1,  2}, {4, 6, 4}, { 2, 7,  4}, 0, 34};
         sheep.isHumanoid = false;
     }
 
@@ -75,15 +75,15 @@ void MobRenderer::registerModels() {
     {
         auto& chicken = models_[static_cast<int>(MobType::Chicken)];
         chicken.type = MobType::Chicken; chicken.textureName = "chicken"; chicken.texWidth = 64; chicken.texHeight = 32;
-        // 身体：6x6x8
+        // 身体：6x6x6，底部Y=5，顶部Y=11
         chicken.body = {{-3, 5, -3}, {6, 6, 6}, {0, 8, 0}, 0, 9};
-        // 头部：4x6x3 在身体前方
-        chicken.head = {{-2, 7, -8}, {4, 6, 3}, {0, 10, -3}, 0, 0};
-        // 两条腿（鸡只有两条腿，前后腿共用同一位置）
-        chicken.legFrontLeft  = {{-2, 0, -1}, {3, 5, 3}, {-1, 5, 0}, 26, 0};
-        chicken.legFrontRight = {{ 0, 0, -1}, {3, 5, 3}, { 1, 5, 0}, 26, 0};
-        chicken.legBackLeft   = {{-2, 0, -1}, {3, 5, 3}, {-1, 5, 0}, 26, 0};
-        chicken.legBackRight  = {{ 0, 0, -1}, {3, 5, 3}, { 1, 5, 0}, 26, 0};
+        // 头部：4x6x3 紧贴身体前方顶部（身体顶部Y=11，头底部Y=9，有2像素重叠确保连接）
+        chicken.head = {{-2, 9, -6}, {4, 6, 3}, {0, 12, -3}, 0, 0};
+        // 两条细腿：1x5x1，分开放置避免重叠
+        chicken.legFrontLeft  = {{-2, 0, -1}, {1, 5, 1}, {-1, 5, 0}, 26, 0};
+        chicken.legFrontRight = {{ 1, 0, -1}, {1, 5, 1}, { 1, 5, 0}, 26, 0};
+        chicken.legBackLeft   = {{-2, 0, -1}, {1, 5, 1}, {-1, 5, 0}, 26, 0};
+        chicken.legBackRight  = {{ 1, 0, -1}, {1, 5, 1}, { 1, 5, 0}, 26, 0};
         chicken.isHumanoid = false;
     }
 
@@ -373,7 +373,9 @@ void MobRenderer::appendMobMesh(const MobEntity& mob, float partialTick, float s
 
     // 根变换：位置 + 旋转
     glm::mat4 root(1.0f);
-    root = glm::translate(root, renderPos);
+    // renderPos 是碰撞箱中心，但模型定义中 Y=0 是脚底
+    // 需要向下偏移 halfExtents.y 使模型脚底对齐地面
+    root = glm::translate(root, renderPos - glm::vec3(0, mob.halfExtents.y, 0));
     root = glm::rotate(root, renderYaw, glm::vec3(0, 1, 0));
     if (deathAngle > 0.0f) {
         root = glm::rotate(root, deathAngle, glm::vec3(0, 0, 1));

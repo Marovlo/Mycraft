@@ -20,13 +20,13 @@ MobRegistry& MobRegistry::instance() {
 
 void MobRegistry::registerDefaults() {
     mobs_[static_cast<int>(MobType::Pig)] = {
-        "pig", MobType::Pig, 10, 0.25f, 0.0f, 0.0f, 0, 0.9f, 0.9f, 0.0f, false, false
+        "pig", MobType::Pig, 10, 0.25f, 0.0f, 0.0f, 0, 0.6f, 0.9f, 0.0f, false, false
     };
     mobs_[static_cast<int>(MobType::Cow)] = {
-        "cow", MobType::Cow, 10, 0.2f, 0.0f, 0.0f, 0, 0.9f, 1.4f, 0.0f, false, false
+        "cow", MobType::Cow, 10, 0.2f, 0.0f, 0.0f, 0, 0.7f, 1.4f, 0.0f, false, false
     };
     mobs_[static_cast<int>(MobType::Sheep)] = {
-        "sheep", MobType::Sheep, 8, 0.23f, 0.0f, 0.0f, 0, 0.9f, 1.3f, 0.0f, false, false
+        "sheep", MobType::Sheep, 8, 0.23f, 0.0f, 0.0f, 0, 0.6f, 1.3f, 0.0f, false, false
     };
     mobs_[static_cast<int>(MobType::Chicken)] = {
         "chicken", MobType::Chicken, 4, 0.25f, 0.0f, 0.0f, 0, 0.4f, 0.7f, 0.0f, false, false
@@ -178,6 +178,7 @@ void MobEntity::tick(World& world, EntityManager& mgr,
     if (invulnerableTicks > 0) invulnerableTicks--;
     if (hurtTicks > 0) hurtTicks--;
     if (attackCooldown > 0) attackCooldown--;
+    if (panicTicks > 0) panicTicks--;
 
     // 重力
     if (!onGround) {
@@ -207,10 +208,11 @@ void MobEntity::tick(World& world, EntityManager& mgr,
     // 燃烧
     tickBurning(world);
 
-    // 行走动画
+    // 行走动画：正常时慢摆，恐慌时快摆
     float speed = std::sqrt(velocity.x * velocity.x + velocity.z * velocity.z);
     if (speed > 0.01f) {
-        walkCycle += speed * 2.5f;
+        float animSpeed = (panicTicks > 0) ? speed * 3.5f : speed * 1.2f;
+        walkCycle += animSpeed;
         if (walkCycle > 6.2831853f) walkCycle -= 6.2831853f;
     }
 
@@ -249,7 +251,7 @@ void MobEntity::tickPassiveAI(World& world, Player& player) {
 
     case AIState::Wander:
         if (hasWanderTarget) {
-            moveToward(wanderTarget, moveSpeed);
+            moveToward(wanderTarget, moveSpeed, &world);
             float dx = wanderTarget.x - position.x;
             float dz = wanderTarget.z - position.z;
             float dist = std::sqrt(dx * dx + dz * dz);
@@ -268,14 +270,30 @@ void MobEntity::tickPassiveAI(World& world, Player& player) {
         if (stateTimer <= 0) {
             aiState = AIState::Idle;
             stateTimer = 40 + (std::rand() % 60);
+            panicTicks = 0;
             break;
         }
-        // 远离玩家
+        // 逃跑：远离玩家方向 + 随机偏移，模拟惊慌乱跑
         glm::vec3 away = position - player.position;
         if (glm::length(away) > 0.01f) {
             away = glm::normalize(away);
-            moveToward(position + away * 5.0f, moveSpeed * 1.5f);
+            // 每隔一段时间随机偏转逃跑方向，模拟乱跑
+            if (stateTimer % 15 == 0) {
+                float randAngle = ((std::rand() % 120) - 60) * 3.14159f / 180.0f;
+                float cosA = std::cos(randAngle), sinA = std::sin(randAngle);
+                float nx = away.x * cosA - away.z * sinA;
+                float nz = away.x * sinA + away.z * cosA;
+                away.x = nx;
+                away.z = nz;
+            }
+        } else {
+            // 如果和玩家重叠，随机方向逃跑
+            float angle = (std::rand() % 360) * 3.14159f / 180.0f;
+            away = glm::vec3(std::cos(angle), 0, std::sin(angle));
         }
+        // 恐慌时用更快的速度逃跑
+        float fleeSpeed = (panicTicks > 0) ? moveSpeed * 2.5f : moveSpeed * 1.5f;
+        moveToward(position + away * 5.0f, fleeSpeed, &world);
         break;
     }
 
@@ -313,7 +331,7 @@ void MobEntity::tickHostileAI(World& world, Player& player, EntityManager& mgr) 
             hasWanderTarget = true;
         } else if (aiState == AIState::Wander) {
             if (hasWanderTarget) {
-                moveToward(wanderTarget, moveSpeed);
+                moveToward(wanderTarget, moveSpeed, &world);
                 float d = glm::length(glm::vec2(wanderTarget.x - position.x, wanderTarget.z - position.z));
                 if (d < 1.0f || stateTimer <= 0) {
                     aiState = AIState::Idle;
@@ -349,12 +367,12 @@ void MobEntity::tickHostileAI(World& world, Player& player, EntityManager& mgr) 
         // 沿路径移动
         if (!path.empty() && pathIndex < static_cast<int>(path.size())) {
             glm::vec3 target(path[pathIndex].x + 0.5f, position.y, path[pathIndex].y + 0.5f);
-            moveToward(target, moveSpeed);
+            moveToward(target, moveSpeed, &world);
             float d = glm::length(glm::vec2(target.x - position.x, target.z - position.z));
             if (d < 0.5f) pathIndex++;
         } else {
             // 直接朝玩家移动
-            moveToward(player.position, moveSpeed);
+            moveToward(player.position, moveSpeed, &world);
         }
 
         // 进入攻击范围
@@ -469,20 +487,21 @@ void MobEntity::takeDamage(int amount, const glm::vec3& knockbackDir) {
     hurtTicks = 10;
     invulnerableTicks = 10;  // 0.5秒无敌
 
-    // 击退
-    velocity += knockbackDir * 6.0f;
-    velocity.y += 4.0f;
+    // 击退：给一个明显的击飞感
+    velocity += knockbackDir * 8.0f;
+    velocity.y += 5.0f;
 
     if (hp <= 0) {
         hp = 0;
         isDying = true;
         deathTicks = 0;
     } else {
-        // 被动生物受伤后逃跑
+        // 被动生物受伤后逃跑 + 恐慌加速
         const auto& props = MobRegistry::instance().get(mobType);
         if (!props.isHostile) {
             aiState = AIState::Flee;
             stateTimer = 60 + (std::rand() % 40);  // 3-5秒
+            panicTicks = 80 + (std::rand() % 40);  // 4-6秒恐慌（加速摆腿+加速移动）
         }
     }
 }
@@ -588,7 +607,7 @@ bool MobEntity::canSeePlayer(const World& world, const Player& player) const {
     return true;
 }
 
-void MobEntity::moveToward(const glm::vec3& target, float speed) {
+void MobEntity::moveToward(const glm::vec3& target, float speed, World* world) {
     glm::vec3 dir = target - position;
     dir.y = 0;
     float dist = glm::length(dir);
@@ -597,6 +616,30 @@ void MobEntity::moveToward(const glm::vec3& target, float speed) {
 
     // 更新朝向
     bodyYaw = std::atan2(dir.x, dir.z);
+
+    // 自动跳跃：检测前方1格高障碍
+    if (onGround && world) {
+        // 前方脚底位置
+        float feetY = position.y - halfExtents.y;
+        int checkX = static_cast<int>(std::floor(position.x + dir.x * 0.6f));
+        int checkZ = static_cast<int>(std::floor(position.z + dir.z * 0.6f));
+        int checkY = static_cast<int>(std::floor(feetY));
+        // 前方脚底高度有实心方块（1格高障碍）
+        if (BlockRegistry::instance().isSolid(world->getBlock(checkX, checkY, checkZ))) {
+            // 障碍上方必须是空的（可以跳上去）
+            int headBlocks = static_cast<int>(std::ceil(mobHeight));
+            bool canJump = true;
+            for (int dy = 1; dy <= headBlocks; dy++) {
+                if (BlockRegistry::instance().isSolid(world->getBlock(checkX, checkY + dy, checkZ))) {
+                    canJump = false;
+                    break;
+                }
+            }
+            if (canJump) {
+                tryJump();
+            }
+        }
+    }
 
     // 应用速度
     float accel = onGround ? speed * 4.0f : speed * 1.0f;
@@ -626,3 +669,5 @@ bool MobEntity::tryJump() {
     }
     return false;
 }
+
+
