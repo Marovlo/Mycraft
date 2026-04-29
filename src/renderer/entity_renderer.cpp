@@ -117,10 +117,10 @@ void EntityRenderer::appendItemMesh(const ItemEntity& item, float partialTick) {
             const auto& blockProps = BlockRegistry::instance().get(blockId);
             uint16_t texId = blockProps.textures.forDirection(f.dir);
             glm::vec4 uvRect = atlas_->getTileUV(texId);
-            glm::vec2 uv0(uvRect.x, uvRect.y);
-            glm::vec2 uv1(uvRect.x, uvRect.w);
-            glm::vec2 uv2(uvRect.z, uvRect.w);
-            glm::vec2 uv3(uvRect.z, uvRect.y);
+            glm::vec2 uv0(uvRect.x, uvRect.w);
+            glm::vec2 uv1(uvRect.x, uvRect.y);
+            glm::vec2 uv2(uvRect.z, uvRect.y);
+            glm::vec2 uv3(uvRect.z, uvRect.w);
 
             auto xf = [&](const glm::vec3& v) {
                 glm::vec4 p = M * glm::vec4(v, 1.0f);

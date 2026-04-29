@@ -103,10 +103,10 @@ void BlockModelRenderer::enqueueBlockIcon(UIRenderer& ui, BlockId blockId,
         const Face& f = *visible[vi].face;
 
         glm::vec4 uvRect = atlas.getTileUV(f.texId); // (u0,v0,u1,v1)
-        glm::vec2 uv0(uvRect.x, uvRect.y);
-        glm::vec2 uv1(uvRect.x, uvRect.w);
-        glm::vec2 uv2(uvRect.z, uvRect.w);
-        glm::vec2 uv3(uvRect.z, uvRect.y);
+        glm::vec2 uv0(uvRect.x, uvRect.w);
+        glm::vec2 uv1(uvRect.x, uvRect.y);
+        glm::vec2 uv2(uvRect.z, uvRect.y);
+        glm::vec2 uv3(uvRect.z, uvRect.w);
 
         glm::vec2 sv0 = toScreen(f.v0);
         glm::vec2 sv1 = toScreen(f.v1);

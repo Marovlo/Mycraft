@@ -23,10 +23,13 @@ void MeshBuilder::addFace(const glm::vec3& blockPos, Direction dir, uint16_t tex
         uvRect = atlas_->getTileUV(texId);
     }
 
-    glm::vec2 uv0(uvRect.x, uvRect.y);
-    glm::vec2 uv1(uvRect.x, uvRect.w);
-    glm::vec2 uv2(uvRect.z, uvRect.w);
-    glm::vec2 uv3(uvRect.z, uvRect.y);
+    // UV坐标：vMax对应图片底部，vMin对应图片顶部（Vulkan纹理坐标系）
+    // 顶点顺序中 v0/v3 是底部(Y=0)，v1/v2 是顶部(Y=1)
+    // 所以 v0/v3 应映射到 vMax（图片底部），v1/v2 映射到 vMin（图片顶部）
+    glm::vec2 uv0(uvRect.x, uvRect.w);  // 左下（图片底部）
+    glm::vec2 uv1(uvRect.x, uvRect.y);  // 左上（图片顶部）
+    glm::vec2 uv2(uvRect.z, uvRect.y);  // 右上（图片顶部）
+    glm::vec2 uv3(uvRect.z, uvRect.w);  // 右下（图片底部）
 
     uint32_t baseIdx = static_cast<uint32_t>(vertices_.size());
 
@@ -52,10 +55,10 @@ void MeshBuilder::addTransparentFace(const glm::vec3& blockPos, Direction dir, u
         uvRect = atlas_->getTileUV(texId);
     }
 
-    glm::vec2 uv0(uvRect.x, uvRect.y);
-    glm::vec2 uv1(uvRect.x, uvRect.w);
-    glm::vec2 uv2(uvRect.z, uvRect.w);
-    glm::vec2 uv3(uvRect.z, uvRect.y);
+    glm::vec2 uv0(uvRect.x, uvRect.w);
+    glm::vec2 uv1(uvRect.x, uvRect.y);
+    glm::vec2 uv2(uvRect.z, uvRect.y);
+    glm::vec2 uv3(uvRect.z, uvRect.w);
 
     uint32_t baseIdx = static_cast<uint32_t>(transVertices_.size());
 
