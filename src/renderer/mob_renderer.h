@@ -12,9 +12,11 @@ class EntityManager;
 // 生物模型的一个长方体部件
 struct MobCuboid {
     glm::vec3 origin;    // 部件原点（相对于模型中心）
-    glm::vec3 size;      // 部件尺寸
+    glm::vec3 size;      // 部件尺寸（3D空间）
     glm::vec3 pivot;     // 旋转轴心
     int uvX, uvY;        // 纹理 UV 起始位置（像素坐标）
+    glm::vec3 uvSize{0}; // UV展开用的尺寸（当与size不同时使用，如身体旋转90度）
+                         // 全0表示使用size
 };
 
 // 一种生物的完整模型定义

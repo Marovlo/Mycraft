@@ -16,74 +16,74 @@ namespace fs = std::filesystem;
 
 void MobRenderer::registerModels() {
     // ========== 猪 (Pig) ==========
-    // MC原版：身体较长, 头部比身体窄, 腿 4x6x4
-    // 纹理 64x64: 头(0,0)展开24x12, 身体(0,12)展开44x22, 腿(0,34)展开16x10
-    // 坐标系：Y=上, Z=前进方向(正面), 模型中心在脚底
+    // MC原版Java: 纹理64x32, 头8x8x8 UV(0,0), 身体addBox(-5,-10,-7, 10,16,8) UV(28,8), 腿4x6x4 UV(0,16)
+    // 身体在Java中是竖直定义后旋转90度变水平，所以3D尺寸(10,8,16)但UV用(10,16,8)
     {
         auto& pig = models_[static_cast<int>(MobType::Pig)];
-        pig.type = MobType::Pig; pig.textureName = "pig"; pig.texWidth = 64; pig.texHeight = 64;
-        // 身体：宽8 高8 长14，中心在 (0, 11, 0)，底部Y=7，顶部Y=15
-        pig.body = {{-4, 7, -7}, {8, 8, 14}, {0, 11, 0}, 0, 12};
-        // 头部：6x6x6，在身体前方（-Z方向），比身体窄
-        pig.head = {{-3, 8, -13}, {6, 6, 6}, {0, 11, -7}, 0, 0};
-        // 四条腿：4x6x4 的柱子，从身体底部(Y=7)向下延伸到地面(Y=1)
-        pig.legFrontLeft  = {{-4, 1, -6}, {4, 6, 4}, {-2, 7, -5}, 0, 34};
-        pig.legFrontRight = {{ 0, 1, -6}, {4, 6, 4}, { 2, 7, -5}, 0, 34};
-        pig.legBackLeft   = {{-4, 1,  2}, {4, 6, 4}, {-2, 7,  4}, 0, 34};
-        pig.legBackRight  = {{ 0, 1,  2}, {4, 6, 4}, { 2, 7,  4}, 0, 34};
+        pig.type = MobType::Pig; pig.textureName = "pig"; pig.texWidth = 64; pig.texHeight = 32;
+        // 身体：3D空间 宽10 高8 长16，UV展开用 sx=10 sy=16 sz=8
+        pig.body = {{-5, 7, -8}, {10, 8, 16}, {0, 11, 0}, 28, 8, {10, 16, 8}};
+        // 头部：8x8x8
+        pig.head = {{-4, 8, -14}, {8, 8, 8}, {0, 12, -6}, 0, 0};
+        // 四条腿：4x6x4
+        pig.legFrontLeft  = {{-5, 1, -7}, {4, 6, 4}, {-3, 7, -5}, 0, 16};
+        pig.legFrontRight = {{ 1, 1, -7}, {4, 6, 4}, { 3, 7, -5}, 0, 16};
+        pig.legBackLeft   = {{-5, 1,  3}, {4, 6, 4}, {-3, 7,  5}, 0, 16};
+        pig.legBackRight  = {{ 1, 1,  3}, {4, 6, 4}, { 3, 7,  5}, 0, 16};
         pig.isHumanoid = false;
     }
 
     // ========== 牛 (Cow) ==========
-    // MC原版：身体较长, 头部 8x8x8 在身体前方, 腿 4x12x4
-    // 纹理 64x64: 头(0,0)展开32x16, 身体(0,16)展开52x26, 腿(0,42)展开16x16
+    // MC原版Java: 纹理64x32, 头8x8x8 UV(0,0), 身体addBox(-6,-10,-7, 12,18,10) UV(18,4), 腿4x12x4 UV(0,16)
+    // 身体旋转90度：3D(12,10,18) UV(12,18,10)
     {
         auto& cow = models_[static_cast<int>(MobType::Cow)];
-        cow.type = MobType::Cow; cow.textureName = "cow"; cow.texWidth = 64; cow.texHeight = 64;
-        // 身体：宽10 高10 长16，底部Y=12，顶部Y=22
-        cow.body = {{-5, 12, -8}, {10, 10, 16}, {0, 17, 0}, 0, 16};
-        // 头部：8x8x8，在身体前方
-        cow.head = {{-4, 12, -16}, {8, 8, 8}, {0, 16, -8}, 0, 0};
+        cow.type = MobType::Cow; cow.textureName = "cow"; cow.texWidth = 64; cow.texHeight = 32;
+        // 身体：3D空间 宽12 高10 长18，UV展开用 sx=12 sy=18 sz=10
+        cow.body = {{-6, 12, -9}, {12, 10, 18}, {0, 17, 0}, 18, 4, {12, 18, 10}};
+        // 头部：8x8x8
+        cow.head = {{-4, 14, -17}, {8, 8, 8}, {0, 18, -9}, 0, 0};
         // 四条腿：4x12x4
-        cow.legFrontLeft  = {{-5, 0, -7}, {4, 12, 4}, {-3, 12, -6}, 0, 42};
-        cow.legFrontRight = {{ 1, 0, -7}, {4, 12, 4}, { 3, 12, -6}, 0, 42};
-        cow.legBackLeft   = {{-5, 0,  5}, {4, 12, 4}, {-3, 12,  6}, 0, 42};
-        cow.legBackRight  = {{ 1, 0,  5}, {4, 12, 4}, { 3, 12,  6}, 0, 42};
+        cow.legFrontLeft  = {{-6, 0, -8}, {4, 12, 4}, {-4, 12, -7}, 0, 16};
+        cow.legFrontRight = {{ 2, 0, -8}, {4, 12, 4}, { 4, 12, -7}, 0, 16};
+        cow.legBackLeft   = {{-6, 0,  5}, {4, 12, 4}, {-4, 12,  7}, 0, 16};
+        cow.legBackRight  = {{ 2, 0,  5}, {4, 12, 4}, { 4, 12,  7}, 0, 16};
         cow.isHumanoid = false;
     }
 
     // ========== 羊 (Sheep) ==========
-    // MC原版：身体较长蓬松, 头部 6x6x6 在身体前方, 腿 4x6x4
-    // 纹理 64x64: 头(0,0)展开24x12, 身体(0,12)展开44x22, 腿(0,34)展开16x10
+    // MC原版Java: 纹理64x32, 头6x6x8 UV(0,0), 身体addBox(-4,-10,-7, 8,16,6) UV(28,8), 腿4x12x4 UV(0,16)
+    // 身体旋转90度：3D(8,6,16) UV(8,16,6)
     {
         auto& sheep = models_[static_cast<int>(MobType::Sheep)];
-        sheep.type = MobType::Sheep; sheep.textureName = "sheep"; sheep.texWidth = 64; sheep.texHeight = 64;
-        // 身体：宽8 高8 长14
-        sheep.body = {{-4, 7, -7}, {8, 8, 14}, {0, 11, 0}, 0, 12};
-        // 头部：6x6x6
-        sheep.head = {{-3, 8, -13}, {6, 6, 6}, {0, 11, -7}, 0, 0};
-        // 四条腿
-        sheep.legFrontLeft  = {{-4, 1, -6}, {4, 6, 4}, {-2, 7, -5}, 0, 34};
-        sheep.legFrontRight = {{ 0, 1, -6}, {4, 6, 4}, { 2, 7, -5}, 0, 34};
-        sheep.legBackLeft   = {{-4, 1,  2}, {4, 6, 4}, {-2, 7,  4}, 0, 34};
-        sheep.legBackRight  = {{ 0, 1,  2}, {4, 6, 4}, { 2, 7,  4}, 0, 34};
+        sheep.type = MobType::Sheep; sheep.textureName = "sheep"; sheep.texWidth = 64; sheep.texHeight = 32;
+        // 身体：3D空间 宽8 高6 长16，UV展开用 sx=8 sy=16 sz=6
+        sheep.body = {{-4, 13, -8}, {8, 6, 16}, {0, 16, 0}, 28, 8, {8, 16, 6}};
+        // 头部：6x6x8（深度8）
+        sheep.head = {{-3, 13, -14}, {6, 6, 8}, {0, 16, -6}, 0, 0};
+        // 四条腿：4x12x4
+        sheep.legFrontLeft  = {{-4, 1, -7}, {4, 12, 4}, {-2, 13, -5}, 0, 16};
+        sheep.legFrontRight = {{ 0, 1, -7}, {4, 12, 4}, { 2, 13, -5}, 0, 16};
+        sheep.legBackLeft   = {{-4, 1,  3}, {4, 12, 4}, {-2, 13,  5}, 0, 16};
+        sheep.legBackRight  = {{ 0, 1,  3}, {4, 12, 4}, { 2, 13,  5}, 0, 16};
         sheep.isHumanoid = false;
     }
 
     // ========== 鸡 (Chicken) ==========
-    // MC原版：身体小，头部在前方，两条细腿
+    // MC原版Java: 纹理64x32, 头4x6x3 UV(0,0), 身体addBox(-3,-4,-3, 6,8,6) UV(0,9), 腿3x5x3 UV(26,0)
+    // 身体旋转90度：3D(6,6,8) UV(6,8,6)
     {
         auto& chicken = models_[static_cast<int>(MobType::Chicken)];
         chicken.type = MobType::Chicken; chicken.textureName = "chicken"; chicken.texWidth = 64; chicken.texHeight = 32;
-        // 身体：6x6x6，底部Y=5，顶部Y=11
-        chicken.body = {{-3, 5, -3}, {6, 6, 6}, {0, 8, 0}, 0, 9};
-        // 头部：4x6x3 紧贴身体前方顶部（身体顶部Y=11，头底部Y=9，有2像素重叠确保连接）
-        chicken.head = {{-2, 9, -6}, {4, 6, 3}, {0, 12, -3}, 0, 0};
-        // 两条细腿：1x5x1，分开放置避免重叠
-        chicken.legFrontLeft  = {{-2, 0, -1}, {1, 5, 1}, {-1, 5, 0}, 26, 0};
-        chicken.legFrontRight = {{ 1, 0, -1}, {1, 5, 1}, { 1, 5, 0}, 26, 0};
-        chicken.legBackLeft   = {{-2, 0, -1}, {1, 5, 1}, {-1, 5, 0}, 26, 0};
-        chicken.legBackRight  = {{ 1, 0, -1}, {1, 5, 1}, { 1, 5, 0}, 26, 0};
+        // 身体：3D空间 宽6 高6 长8，UV展开用 sx=6 sy=8 sz=6
+        chicken.body = {{-3, 4, -4}, {6, 6, 8}, {0, 7, 0}, 0, 9, {6, 8, 6}};
+        // 头部：4x6x3 紧贴身体前方顶部
+        chicken.head = {{-2, 9, -7}, {4, 6, 3}, {0, 12, -4}, 0, 0};
+        // 两条细腿：3x5x3
+        chicken.legFrontLeft  = {{-2, 0, -1}, {3, 5, 3}, {-1, 4, 0}, 26, 0};
+        chicken.legFrontRight = {{ 0, 0, -1}, {3, 5, 3}, { 1, 4, 0}, 26, 0};
+        chicken.legBackLeft   = {{-2, 0, -1}, {3, 5, 3}, {-1, 4, 0}, 26, 0};
+        chicken.legBackRight  = {{ 0, 0, -1}, {3, 5, 3}, { 1, 4, 0}, 26, 0};
         chicken.isHumanoid = false;
     }
 
@@ -96,14 +96,14 @@ void MobRenderer::registerModels() {
         zombie.head = {{-4, 24, -4}, {8, 8, 8}, {0, 24, 0}, 0, 0};
         // 身体：8x12x4
         zombie.body = {{-4, 12, -2}, {8, 12, 4}, {0, 18, 0}, 16, 16};
-        // 两条腿
+        // 两条腿（原版左右腿共用UV）
         zombie.legFrontLeft  = {{-4, 0, -2}, {4, 12, 4}, {-2, 12, 0}, 0, 16};
         zombie.legFrontRight = {{ 0, 0, -2}, {4, 12, 4}, { 2, 12, 0}, 0, 16};
-        zombie.legBackLeft   = {{-4, 0, -2}, {4, 12, 4}, {-2, 12, 0}, 0, 32};
-        zombie.legBackRight  = {{ 0, 0, -2}, {4, 12, 4}, { 2, 12, 0}, 0, 32};
+        zombie.legBackLeft   = {{-4, 0, -2}, {4, 12, 4}, {-2, 12, 0}, 0, 16};
+        zombie.legBackRight  = {{ 0, 0, -2}, {4, 12, 4}, { 2, 12, 0}, 0, 16};
         // 手臂
         zombie.armLeft  = {{-8, 12, -2}, {4, 12, 4}, {-6, 22, 0}, 40, 16};
-        zombie.armRight = {{ 4, 12, -2}, {4, 12, 4}, { 6, 22, 0}, 32, 48};
+        zombie.armRight = {{ 4, 12, -2}, {4, 12, 4}, { 6, 22, 0}, 40, 16};
         zombie.isHumanoid = true; zombie.hasArms = true;
     }
 
@@ -124,7 +124,7 @@ void MobRenderer::registerModels() {
     }
 
     // ========== 蜘蛛 (Spider) ==========
-    // MC原版：扁平宽体，头在前方，8条腿（简化为4对）
+    // MC原版Java: 纹理64x32, 头8x8x8 UV(32,4), 身体10x8x12 UV(0,0), 腿16x2x2 UV(18,0)
     {
         auto& spider = models_[static_cast<int>(MobType::Spider)];
         spider.type = MobType::Spider; spider.textureName = "spider"; spider.texWidth = 64; spider.texHeight = 32;
@@ -132,11 +132,11 @@ void MobRenderer::registerModels() {
         spider.head = {{-4, 3, -11}, {8, 8, 8}, {0, 7, -3}, 32, 4};
         // 身体：宽10 高8 长12
         spider.body = {{-5, 3, -3}, {10, 8, 12}, {0, 7, 3}, 0, 0};
-        // 四对腿（简化）
-        spider.legFrontLeft  = {{-8, 0, -6}, {2, 6, 2}, {-6, 5, -5}, 0, 16};
-        spider.legFrontRight = {{ 6, 0, -6}, {2, 6, 2}, { 6, 5, -5}, 0, 16};
-        spider.legBackLeft   = {{-8, 0,  4}, {2, 6, 2}, {-6, 5,  5}, 0, 16};
-        spider.legBackRight  = {{ 6, 0,  4}, {2, 6, 2}, { 6, 5,  5}, 0, 16};
+        // 四对腿（原版16x2x2长条，简化为4对向外伸展）
+        spider.legFrontLeft  = {{-15, 0, -6}, {16, 2, 2}, {-5, 5, -5}, 18, 0};
+        spider.legFrontRight = {{ -1, 0, -6}, {16, 2, 2}, { 5, 5, -5}, 18, 0};
+        spider.legBackLeft   = {{-15, 0,  4}, {16, 2, 2}, {-5, 5,  5}, 18, 0};
+        spider.legBackRight  = {{ -1, 0,  4}, {16, 2, 2}, { 5, 5,  5}, 18, 0};
         spider.isHumanoid = false;
     }
 
@@ -485,9 +485,11 @@ void MobRenderer::addCuboid(const MobCuboid& cuboid, const TexRegion& texReg,
     // UV 坐标基于 cuboid 的 uvX, uvY 和尺寸
     int uvX = cuboid.uvX;
     int uvY = cuboid.uvY;
-    int isx = static_cast<int>(sx);
-    int isy = static_cast<int>(sy);
-    int isz = static_cast<int>(sz);
+    // 如果指定了uvSize则用于UV展开（身体旋转90度时3D尺寸和UV尺寸不同）
+    bool hasUvSize = (cuboid.uvSize.x > 0 || cuboid.uvSize.y > 0 || cuboid.uvSize.z > 0);
+    int isx = hasUvSize ? static_cast<int>(cuboid.uvSize.x) : static_cast<int>(sx);
+    int isy = hasUvSize ? static_cast<int>(cuboid.uvSize.y) : static_cast<int>(sy);
+    int isz = hasUvSize ? static_cast<int>(cuboid.uvSize.z) : static_cast<int>(sz);
 
     // 6个面的 UV 映射（MC标准展开）
     struct FaceUV {
