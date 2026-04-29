@@ -49,4 +49,6 @@ private:
 
     void ensureCapacity();
     void appendItemMesh(const class ItemEntity& item, float partialTick);
+    void appendArrowMesh(const class ArrowEntity& arrow, float partialTick);
+    void appendXPOrbMesh(const class XPOrbEntity& orb, float partialTick);
 };

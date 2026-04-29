@@ -1,6 +1,8 @@
 #include "entity_renderer.h"
 #include "texture_atlas.h"
 #include "entity/item_entity.h"
+#include "entity/arrow_entity.h"
+#include "entity/xp_orb_entity.h"
 #include "core/item.h"
 #include "core/block.h"
 #include "core/common.h"
@@ -249,8 +251,13 @@ void EntityRenderer::buildFrame(const EntityManager& mgr, float partialTick) {
 
     for (const auto& e : mgr.entities()) {
         if (!e || !e->alive) continue;
-        if (e->kind() != EntityKind::Item) continue;
-        appendItemMesh(static_cast<const ItemEntity&>(*e), partialTick);
+        if (e->kind() == EntityKind::Item) {
+            appendItemMesh(static_cast<const ItemEntity&>(*e), partialTick);
+        } else if (e->kind() == EntityKind::Arrow) {
+            appendArrowMesh(static_cast<const ArrowEntity&>(*e), partialTick);
+        } else if (e->kind() == EntityKind::XPOrb) {
+            appendXPOrbMesh(static_cast<const XPOrbEntity&>(*e), partialTick);
+        }
     }
 
     indexCountThisFrame_ = static_cast<uint32_t>(indices_.size());
@@ -266,6 +273,160 @@ void EntityRenderer::buildFrame(const EntityManager& mgr, float partialTick) {
     void* iData = engine_->mapBuffer(indexBuffer_);
     std::memcpy(iData, indices_.data(), sizeof(uint32_t) * indices_.size());
     engine_->unmapBuffer(indexBuffer_);
+}
+
+void EntityRenderer::appendArrowMesh(const ArrowEntity& arrow, float partialTick) {
+    // 箭矢渲染：一个细长的长方体，朝飞行方向旋转
+    // 使用方块纹理图集中的 oak_planks 纹理作为简单的棕色纹理
+    // （后续可替换为专用箭矢纹理）
+
+    glm::vec3 renderPos = glm::mix(arrow.prevPosition, arrow.position, partialTick);
+
+    // 插值朝向
+    float renderYaw = glm::mix(arrow.prevYaw, arrow.yaw, partialTick);
+    float renderPitch = glm::mix(arrow.prevPitch, arrow.pitch, partialTick);
+
+    // 箭矢尺寸：长 0.5 格，宽/高 0.05 格
+    float length = 0.5f;
+    float thick = 0.05f;
+
+    // 构建变换矩阵：先绕 Y 轴旋转 yaw，再绕 X 轴旋转 pitch
+    glm::mat4 M(1.0f);
+    M = glm::translate(M, renderPos);
+    M = glm::rotate(M, renderYaw, glm::vec3(0.0f, 1.0f, 0.0f));
+    M = glm::rotate(M, renderPitch, glm::vec3(1.0f, 0.0f, 0.0f));
+
+    glm::mat3 N = glm::mat3(M);
+
+    // 使用 oak_planks 纹理（棕色）
+    uint16_t texId = atlas_->getTileIndex("oak_planks");
+    glm::vec4 uvRect = atlas_->getTileUV(texId);
+    // 只取纹理的一小部分（中心区域）作为箭矢颜色
+    float uMid = (uvRect.x + uvRect.z) * 0.5f;
+    float vMid = (uvRect.y + uvRect.w) * 0.5f;
+    float uHalf = (uvRect.z - uvRect.x) * 0.1f;
+    float vHalf = (uvRect.w - uvRect.y) * 0.1f;
+    glm::vec2 uv00(uMid - uHalf, vMid + vHalf);
+    glm::vec2 uv01(uMid - uHalf, vMid - vHalf);
+    glm::vec2 uv10(uMid + uHalf, vMid - vHalf);
+    glm::vec2 uv11(uMid + uHalf, vMid + vHalf);
+
+    auto xf = [&](const glm::vec3& v) {
+        glm::vec4 p = M * glm::vec4(v, 1.0f);
+        return glm::vec3(p);
+    };
+
+    auto addQuad = [&](glm::vec3 v0, glm::vec3 v1, glm::vec3 v2, glm::vec3 v3,
+                       glm::vec3 normal) {
+        glm::vec3 wn = glm::normalize(N * normal);
+        uint32_t base = static_cast<uint32_t>(vertices_.size());
+        vertices_.push_back({xf(v0), wn, uv00, 1.0f});
+        vertices_.push_back({xf(v1), wn, uv01, 1.0f});
+        vertices_.push_back({xf(v2), wn, uv10, 1.0f});
+        vertices_.push_back({xf(v3), wn, uv11, 1.0f});
+        indices_.push_back(base + 0);
+        indices_.push_back(base + 1);
+        indices_.push_back(base + 2);
+        indices_.push_back(base + 0);
+        indices_.push_back(base + 2);
+        indices_.push_back(base + 3);
+    };
+
+    float hl = length * 0.5f;
+    float ht = thick * 0.5f;
+
+    // 箭矢沿 -Z 方向为前端（飞行方向）
+    // 6 个面
+    // Top (+Y)
+    addQuad({-ht, +ht, +hl}, {-ht, +ht, -hl}, {+ht, +ht, -hl}, {+ht, +ht, +hl}, {0, 1, 0});
+    // Bottom (-Y)
+    addQuad({-ht, -ht, -hl}, {-ht, -ht, +hl}, {+ht, -ht, +hl}, {+ht, -ht, -hl}, {0, -1, 0});
+    // Right (+X)
+    addQuad({+ht, -ht, +hl}, {+ht, +ht, +hl}, {+ht, +ht, -hl}, {+ht, -ht, -hl}, {1, 0, 0});
+    // Left (-X)
+    addQuad({-ht, -ht, -hl}, {-ht, +ht, -hl}, {-ht, +ht, +hl}, {-ht, -ht, +hl}, {-1, 0, 0});
+    // Front (-Z) — 箭头
+    addQuad({-ht, -ht, -hl}, {-ht, +ht, -hl}, {+ht, +ht, -hl}, {+ht, -ht, -hl}, {0, 0, -1});
+    // Back (+Z) — 箭尾
+    addQuad({+ht, -ht, +hl}, {+ht, +ht, +hl}, {-ht, +ht, +hl}, {-ht, -ht, +hl}, {0, 0, 1});
+}
+
+void EntityRenderer::appendXPOrbMesh(const XPOrbEntity& orb, float partialTick) {
+    // 经验球渲染：一个小的发光立方体，带旋转动画
+    // 使用 emerald_block 纹理的中心区域作为绿色发光效果
+
+    glm::vec3 renderPos = glm::mix(orb.prevPosition, orb.position, partialTick);
+
+    // 浮动动画
+    float bobTime = (static_cast<float>(orb.tickCount) + partialTick) * 0.2f;
+    float bobOffset = std::sin(bobTime + orb.visualPhase) * 0.05f;
+    renderPos.y += bobOffset;
+
+    // 旋转
+    float renderYaw = orb.visualYaw + partialTick * 0.15f;
+
+    // 根据经验值确定大小
+    float size = orb.getVisualSize();
+    float hs = size * 0.5f;
+
+    // 构建变换矩阵
+    glm::mat4 M(1.0f);
+    M = glm::translate(M, renderPos);
+    M = glm::rotate(M, renderYaw, glm::vec3(0.0f, 1.0f, 0.0f));
+
+    glm::mat3 N = glm::mat3(M);
+
+    // 使用 emerald_block 纹理中心区域（绿色）
+    uint16_t texId = atlas_->getTileIndex("emerald_block");
+    if (texId == 0) texId = atlas_->getTileIndex("slime_block");
+    glm::vec4 uvRect = atlas_->getTileUV(texId);
+    // 取纹理中心小区域
+    float uMid = (uvRect.x + uvRect.z) * 0.5f;
+    float vMid = (uvRect.y + uvRect.w) * 0.5f;
+    float uSpan = (uvRect.z - uvRect.x) * 0.3f;
+    float vSpan = (uvRect.w - uvRect.y) * 0.3f;
+    glm::vec2 uv00(uMid - uSpan, vMid + vSpan);
+    glm::vec2 uv01(uMid - uSpan, vMid - vSpan);
+    glm::vec2 uv10(uMid + uSpan, vMid - vSpan);
+    glm::vec2 uv11(uMid + uSpan, vMid + vSpan);
+
+    auto xf = [&](const glm::vec3& v) {
+        glm::vec4 p = M * glm::vec4(v, 1.0f);
+        return glm::vec3(p);
+    };
+
+    // 经验球使用更高的光照值（模拟发光效果）
+    float light = 1.0f;
+
+    auto addQuad = [&](glm::vec3 v0, glm::vec3 v1, glm::vec3 v2, glm::vec3 v3,
+                       glm::vec3 normal) {
+        glm::vec3 wn = glm::normalize(N * normal);
+        uint32_t base = static_cast<uint32_t>(vertices_.size());
+        vertices_.push_back({xf(v0), wn, uv00, light});
+        vertices_.push_back({xf(v1), wn, uv01, light});
+        vertices_.push_back({xf(v2), wn, uv10, light});
+        vertices_.push_back({xf(v3), wn, uv11, light});
+        indices_.push_back(base + 0);
+        indices_.push_back(base + 1);
+        indices_.push_back(base + 2);
+        indices_.push_back(base + 0);
+        indices_.push_back(base + 2);
+        indices_.push_back(base + 3);
+    };
+
+    // 6 个面的小立方体
+    // Top (+Y)
+    addQuad({-hs, +hs, +hs}, {-hs, +hs, -hs}, {+hs, +hs, -hs}, {+hs, +hs, +hs}, {0, 1, 0});
+    // Bottom (-Y)
+    addQuad({-hs, -hs, -hs}, {-hs, -hs, +hs}, {+hs, -hs, +hs}, {+hs, -hs, -hs}, {0, -1, 0});
+    // Right (+X)
+    addQuad({+hs, -hs, +hs}, {+hs, +hs, +hs}, {+hs, +hs, -hs}, {+hs, -hs, -hs}, {1, 0, 0});
+    // Left (-X)
+    addQuad({-hs, -hs, -hs}, {-hs, +hs, -hs}, {-hs, +hs, +hs}, {-hs, -hs, +hs}, {-1, 0, 0});
+    // Front (+Z)
+    addQuad({-hs, -hs, +hs}, {-hs, +hs, +hs}, {+hs, +hs, +hs}, {+hs, -hs, +hs}, {0, 0, 1});
+    // Back (-Z)
+    addQuad({+hs, -hs, -hs}, {+hs, +hs, -hs}, {-hs, +hs, -hs}, {-hs, -hs, -hs}, {0, 0, -1});
 }
 
 void EntityRenderer::render(VkCommandBuffer cmd) {

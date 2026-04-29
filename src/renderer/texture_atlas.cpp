@@ -133,3 +133,22 @@ glm::vec4 TextureAtlas::getTileUV(uint16_t tileIndex) const {
     float vMax = (row + 1.0f) * invTilesPerRow_;
     return {uMin, vMin, uMax, vMax};
 }
+
+void TextureAtlas::updateTile(VulkanEngine& engine, uint16_t tileIndex, const uint8_t* rgbaPixels) {
+    if (tileIndex >= totalTiles_) return;
+
+    uint32_t tx = (tileIndex % tilesPerRow_) * tileSize_;
+    uint32_t ty = (tileIndex / tilesPerRow_) * tileSize_;
+
+    // 更新 CPU 端缓存
+    for (uint32_t py = 0; py < tileSize_; py++) {
+        uint32_t srcOffset = py * tileSize_ * 4;
+        uint32_t dstOffset = ((ty + py) * atlasPixelSize_ + tx) * 4;
+        std::memcpy(&cpuPixels_[dstOffset], &rgbaPixels[srcOffset], tileSize_ * 4);
+    }
+
+    // 更新 GPU 纹理子区域
+    engine.updateTextureRegion(image_, rgbaPixels,
+                               static_cast<int>(tx), static_cast<int>(ty),
+                               static_cast<int>(tileSize_), static_cast<int>(tileSize_));
+}

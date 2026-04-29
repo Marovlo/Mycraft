@@ -216,3 +216,38 @@ void EntityManager::spawnItem(const glm::vec3& worldPos, const ItemStack& stack,
          stack.id, stack.count, worldPos.x, worldPos.y, worldPos.z);
     entities_.push_back(std::move(item));
 }
+
+void EntityManager::spawnArrow(const glm::vec3& from, const glm::vec3& dir,
+                               float speed, int damage, bool fromPlayer) {
+    auto arrow = std::make_unique<ArrowEntity>();
+    arrow->fromPlayer = fromPlayer;
+    arrow->launch(from, dir, speed, damage);
+    VLOG(DebugCat::Entity, "spawn arrow pos=(%.2f,%.2f,%.2f) dir=(%.2f,%.2f,%.2f) spd=%.2f dmg=%d",
+         from.x, from.y, from.z, dir.x, dir.y, dir.z, speed, damage);
+    entities_.push_back(std::move(arrow));
+}
+
+void EntityManager::spawnXPOrbs(const glm::vec3& worldPos, int totalXP) {
+    if (totalXP <= 0) return;
+
+    auto splits = XPOrbEntity::splitXP(totalXP);
+    for (int xpVal : splits) {
+        auto orb = std::make_unique<XPOrbEntity>(xpVal);
+        orb->position = worldPos + glm::vec3(0.0f, 0.3f, 0.0f);
+        orb->prevPosition = orb->position;
+
+        // 随机散射速度（类似物品掉落）
+        float angle = static_cast<float>(std::rand()) / static_cast<float>(RAND_MAX) * 6.2831853f;
+        float hSpeed = 0.1f + static_cast<float>(std::rand()) / static_cast<float>(RAND_MAX) * 0.15f;
+        orb->velocity = glm::vec3(
+            std::cos(angle) * hSpeed,
+            0.3f + static_cast<float>(std::rand()) / static_cast<float>(RAND_MAX) * 0.2f,
+            std::sin(angle) * hSpeed
+        );
+
+        orb->visualPhase = static_cast<float>(std::rand()) / static_cast<float>(RAND_MAX) * 6.2831853f;
+        VLOG(DebugCat::Entity, "spawn xp orb value=%d pos=(%.2f,%.2f,%.2f)",
+             xpVal, worldPos.x, worldPos.y, worldPos.z);
+        entities_.push_back(std::move(orb));
+    }
+}

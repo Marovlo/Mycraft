@@ -9,6 +9,7 @@
 class World;
 class Player;
 class EntityManager;
+class DayNightCycle;
 
 // ========== 生物类型 ==========
 enum class MobType : uint8_t {
@@ -109,9 +110,15 @@ public:
     // 受击加速：被攻击后一段时间内加速移动和摆腿
     int panicTicks = 0;        // 受击恐慌剩余tick数（被动生物用）
 
+    // 蜘蛛专用：被激怒标记（白天被攻击后会追踪玩家）
+    bool provoked = false;
+
     // 燃烧（僵尸/骷髅阳光下）
     int fireTicks = 0;
     int fireTimer = 0;         // 每秒伤害计时
+
+    // 静态昼夜循环引用，由 Game::gameTick() 每 tick 设置
+    static const DayNightCycle* sDayNight;
 
     MobEntity() = default;
     explicit MobEntity(MobType type);

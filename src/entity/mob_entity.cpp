@@ -1,5 +1,6 @@
 #include "mob_entity.h"
 #include "entity_manager.h"
+#include "arrow_entity.h"
 #include "world/world.h"
 #include "player/player.h"
 #include "player/inventory.h"
@@ -10,6 +11,10 @@
 #include <queue>
 #include <unordered_set>
 #include <cstdlib>
+#include "world/day_night_cycle.h"
+
+// 静态成员定义
+const DayNightCycle* MobEntity::sDayNight = nullptr;
 
 // ========== MobRegistry ==========
 
@@ -59,29 +64,61 @@ MobEntity::MobEntity(MobType type) : mobType(type) {
     halfExtents = glm::vec3(mobWidth * 0.5f, mobHeight * 0.5f, mobWidth * 0.5f);
 }
 
-// ========== 简化 A* 寻路 ==========
+// ========== A* 寻路系统 ==========
 
 struct PathNode {
-    int x, z;
+    int x, y, z;   // 方块坐标（y = 脚底所在高度）
     float g, h;
     int parentIdx;
     float f() const { return g + h; }
 };
 
+// 检查指定位置是否可行走（脚下实心 + 身体空间无阻挡 + 无液体）
 static bool isWalkable(const World& world, int x, int y, int z, float mobHeight) {
+    auto& reg = BlockRegistry::instance();
     // 脚下必须是实心方块
-    if (!BlockRegistry::instance().isSolid(world.getBlock(x, y - 1, z))) return false;
-    // 身体占据的空间必须是空气/非实心
+    BlockId below = world.getBlock(x, y - 1, z);
+    if (!reg.isSolid(below)) return false;
+    // 身体占据的空间必须是空气/非实心且非液体
     int headBlocks = static_cast<int>(std::ceil(mobHeight));
     for (int dy = 0; dy < headBlocks; dy++) {
         BlockId b = world.getBlock(x, y + dy, z);
-        if (BlockRegistry::instance().isSolid(b)) return false;
+        if (reg.isSolid(b) || reg.isLiquid(b)) return false;
     }
     return true;
 }
 
+// 检查从 fromY 到 toY 的落差是否安全（被动生物不走下 3 格以上悬崖）
+static bool isSafeDrop(int fromY, int toY) {
+    return (fromY - toY) <= 3;
+}
+
+// 在指定 XZ 位置、以 baseY 为参考，搜索可行走的 Y 坐标
+// 允许上1格台阶、下3格（敌对生物不限制下落）
+static int findWalkableY(const World& world, int x, int z, int baseY,
+                          float mobHeight, bool avoidCliffs) {
+    // 优先检查同层
+    if (isWalkable(world, x, baseY, z, mobHeight)) return baseY;
+    // 上1格台阶
+    if (isWalkable(world, x, baseY + 1, z, mobHeight)) return baseY + 1;
+    // 向下搜索（最多下落4格找到地面）
+    for (int dy = 1; dy <= 4; dy++) {
+        int tryY = baseY - dy;
+        if (tryY < 1) break;
+        if (isWalkable(world, x, tryY, z, mobHeight)) {
+            if (avoidCliffs && !isSafeDrop(baseY, tryY)) return -1;
+            return tryY;
+        }
+    }
+    return -1;  // 不可达
+}
+
+// A* 寻路：返回 XZ 路径坐标序列
+// avoidWater: 陆地生物避开水域
+// avoidCliffs: 被动生物避开高悬崖
 static std::vector<glm::ivec2> findPath(const World& world, glm::ivec3 start, glm::ivec3 goal,
-                                          float mobHeight, int maxSteps = 16) {
+                                          float mobHeight, bool avoidCliffs = false,
+                                          int maxSteps = 16) {
     struct NodeCompare {
         bool operator()(const std::pair<float, int>& a, const std::pair<float, int>& b) {
             return a.first > b.first;
@@ -98,17 +135,17 @@ static std::vector<glm::ivec2> findPath(const World& world, glm::ivec3 start, gl
 
     float h0 = std::abs(static_cast<float>(goal.x - start.x)) +
                 std::abs(static_cast<float>(goal.z - start.z));
-    nodes.push_back({start.x, start.z, 0.0f, h0, -1});
+    nodes.push_back({start.x, start.y, start.z, 0.0f, h0, -1});
     open.push({h0, 0});
 
     static const int dx[] = {1, -1, 0, 0, 1, -1, 1, -1};
     static const int dz[] = {0, 0, 1, -1, 1, 1, -1, -1};
 
     while (!open.empty() && nodes.size() < 512) {
-        auto [f, idx] = open.top();
+        auto [fVal, idx] = open.top();
         open.pop();
 
-        auto& cur = nodes[idx];
+        const auto& cur = nodes[idx];
         int64_t key = packKey(cur.x, cur.z);
         if (closed.count(key)) continue;
         closed.insert(key);
@@ -132,28 +169,53 @@ static std::vector<glm::ivec2> findPath(const World& world, glm::ivec3 start, gl
             int nz = cur.z + dz[d];
             if (closed.count(packKey(nx, nz))) continue;
 
-            // 找到可行走的 Y 坐标（允许上下1格台阶）
-            int baseY = start.y;
-            bool found = false;
-            for (int tryY = baseY + 1; tryY >= baseY - 1; tryY--) {
-                if (isWalkable(world, nx, tryY, nz, mobHeight)) {
-                    found = true;
-                    break;
+            // 以当前节点的 Y 为基准，搜索邻居可行走的 Y
+            int ny = findWalkableY(world, nx, nz, cur.y, mobHeight, avoidCliffs);
+            if (ny < 0) continue;
+
+            // 对角线移动时检查两个相邻正交方向是否可通行（防止穿墙角）
+            // dx/dz 索引 4-7 对应: (1,1), (-1,1), (1,-1), (-1,-1)
+            // 需要检查两个正交分量方向是否被墙挡住
+            if (d >= 4) {
+                // 分解对角线为两个正交分量
+                int compX = dx[d]; // 对角线的 X 分量
+                int compZ = dz[d]; // 对角线的 Z 分量
+                auto& reg = BlockRegistry::instance();
+                // 检查 X 方向邻居和 Z 方向邻居是否都是实心（两面墙夹角）
+                bool xBlocked = reg.isSolid(world.getBlock(cur.x + compX, cur.y, cur.z));
+                bool zBlocked = reg.isSolid(world.getBlock(cur.x, cur.y, cur.z + compZ));
+                if (xBlocked && zBlocked) {
+                    continue;  // 对角线被两面墙挡住
                 }
             }
-            if (!found) continue;
 
-            float cost = (d < 4) ? 1.0f : 1.414f;
+            // 上台阶额外代价
+            float stepCost = 0.0f;
+            if (ny > cur.y) stepCost = 0.5f;  // 上台阶稍贵
+
+            float cost = ((d < 4) ? 1.0f : 1.414f) + stepCost;
             float ng = cur.g + cost;
             float nh = std::abs(static_cast<float>(goal.x - nx)) +
                        std::abs(static_cast<float>(goal.z - nz));
             int newIdx = static_cast<int>(nodes.size());
-            nodes.push_back({nx, nz, ng, nh, idx});
+            nodes.push_back({nx, ny, nz, ng, nh, idx});
             open.push({ng + nh, newIdx});
         }
     }
 
     return {};  // 没找到路径
+}
+
+// 验证漫步目标是否安全可达（被动生物用）
+static bool isWanderTargetSafe(const World& world, const glm::vec3& from,
+                                const glm::vec3& target, float mobHeight) {
+    int tx = static_cast<int>(std::floor(target.x));
+    int tz = static_cast<int>(std::floor(target.z));
+    int fromY = static_cast<int>(std::floor(from.y - mobHeight * 0.5f));
+
+    // 目标位置必须可行走且不是悬崖
+    int ty = findWalkableY(world, tx, tz, fromY, mobHeight, true);
+    return ty >= 0;
 }
 
 // ========== MobEntity::tick ==========
@@ -199,6 +261,39 @@ void MobEntity::tick(World& world, EntityManager& mgr,
         velocity.y = -2.0f;
     }
 
+    // 蜘蛛爬墙：碰到垂直方块面时向上攀爬
+    if (mobType == MobType::Spider && !onGround) {
+        // 检测蜘蛛水平方向是否紧贴方块（碰撞检测）
+        float feetY = position.y - halfExtents.y;
+        int bx = static_cast<int>(std::floor(position.x));
+        int by = static_cast<int>(std::floor(feetY));
+        int bz = static_cast<int>(std::floor(position.z));
+        bool touchingWall = false;
+        // 检查四个水平方向是否有实心方块
+        float hw = halfExtents.x + 0.05f;  // 略微扩大检测范围
+        int checkPositions[][2] = {
+            {static_cast<int>(std::floor(position.x + hw)), bz},
+            {static_cast<int>(std::floor(position.x - hw)), bz},
+            {bx, static_cast<int>(std::floor(position.z + hw))},
+            {bx, static_cast<int>(std::floor(position.z - hw))}
+        };
+        for (auto& cp : checkPositions) {
+            // 检查身体高度范围内是否有实心方块
+            for (int dy = 0; dy <= static_cast<int>(std::ceil(mobHeight)); dy++) {
+                if (BlockRegistry::instance().isSolid(world.getBlock(cp[0], by + dy, cp[1]))) {
+                    touchingWall = true;
+                    break;
+                }
+            }
+            if (touchingWall) break;
+        }
+        if (touchingWall) {
+            // 攀爬：抵消重力，给予向上速度
+            if (velocity.y < 0) velocity.y = 0;
+            velocity.y = moveSpeed * 4.0f;  // 攀爬速度等于水平移速
+        }
+    }
+
     // 物理碰撞
     integrateMotion(world, 0.05f);
 
@@ -241,11 +336,22 @@ void MobEntity::tickPassiveAI(World& world, Player& player) {
         if (stateTimer <= 0) {
             aiState = AIState::Wander;
             stateTimer = 40 + (std::rand() % 120);  // 2-8秒
-            // 选择随机漫步目标
-            float angle = (std::rand() % 360) * 3.14159f / 180.0f;
-            float dist = 3.0f + (std::rand() % 5);
-            wanderTarget = position + glm::vec3(std::cos(angle) * dist, 0, std::sin(angle) * dist);
-            hasWanderTarget = true;
+            // 选择随机漫步目标，验证安全性
+            for (int attempt = 0; attempt < 5; attempt++) {
+                float angle = (std::rand() % 360) * 3.14159f / 180.0f;
+                float dist = 3.0f + (std::rand() % 5);
+                glm::vec3 candidate = position + glm::vec3(std::cos(angle) * dist, 0, std::sin(angle) * dist);
+                if (isWanderTargetSafe(world, position, candidate, mobHeight)) {
+                    wanderTarget = candidate;
+                    hasWanderTarget = true;
+                    break;
+                }
+            }
+            if (!hasWanderTarget) {
+                // 所有候选目标都不安全，回到Idle
+                aiState = AIState::Idle;
+                stateTimer = 40 + (std::rand() % 80);
+            }
         }
         break;
 
@@ -315,7 +421,12 @@ void MobEntity::tickHostileAI(World& world, Player& player, EntityManager& mgr) 
     case AIState::Wander:
         // 检测玩家
         if (distToPlayer <= props.detectRange && !player.dead) {
-            if (canSeePlayer(world, player)) {
+            // 蜘蛛白天中立：白天不主动追踪，除非被攻击过（provoked）
+            bool shouldChase = true;
+            if (mobType == MobType::Spider && sDayNight && sDayNight->isDay()) {
+                shouldChase = provoked;  // 白天只有被攻击后才追踪
+            }
+            if (shouldChase && canSeePlayer(world, player)) {
                 aiState = AIState::Chase;
                 stateTimer = 200;
                 break;
@@ -360,7 +471,7 @@ void MobEntity::tickHostileAI(World& world, Player& player, EntityManager& mgr) 
             glm::ivec3 goal(static_cast<int>(std::floor(player.position.x)),
                             static_cast<int>(std::floor(player.position.y)),
                             static_cast<int>(std::floor(player.position.z)));
-            path = findPath(world, start, goal, mobHeight);
+            path = findPath(world, start, goal, mobHeight, false, 24);
             pathIndex = 1;  // 跳过起点
         }
 
@@ -465,10 +576,22 @@ void MobEntity::tickCombat(Player& player, EntityManager& mgr) {
     if (dist > attackRange * 1.5f) return;
 
     if (mobType == MobType::Skeleton) {
-        // 骷髅射箭 — 简化：直接对玩家造成远程伤害
-        glm::vec3 dir = glm::normalize(player.position + glm::vec3(0, 1.0f, 0) - position);
-        player.takeDamage(static_cast<int>(attackDamage));
-        player.velocity += dir * 3.0f;
+        // 骷髅射箭 — 生成箭矢实体，沿抛物线飞向玩家
+        // 发射位置：骷髅眼睛高度
+        glm::vec3 eyePos = position + glm::vec3(0, mobHeight * 0.4f, 0);
+        // 瞄准玩家身体中心（加一点高度补偿重力下坠）
+        glm::vec3 targetPos = player.position + glm::vec3(0, 1.0f, 0);
+        glm::vec3 dir = targetPos - eyePos;
+        float horizDist = std::sqrt(dir.x * dir.x + dir.z * dir.z);
+        // 补偿重力：根据水平距离给一个向上的偏移
+        // MC 原版骷髅箭速约 1.6 blocks/tick，这里用类似值
+        float arrowSpeed = 1.6f;
+        float flightTime = horizDist / arrowSpeed;
+        // 补偿重力下坠：额外向上瞄 (0.5 * g * t)
+        dir.y += 0.5f * ArrowEntity::GRAVITY * flightTime;
+        dir = glm::normalize(dir);
+
+        mgr.spawnArrow(eyePos, dir, arrowSpeed, static_cast<int>(attackDamage), false);
     } else {
         // 近战攻击
         if (dist <= attackRange) {
@@ -502,6 +625,10 @@ void MobEntity::takeDamage(int amount, const glm::vec3& knockbackDir) {
             aiState = AIState::Flee;
             stateTimer = 60 + (std::rand() % 40);  // 3-5秒
             panicTicks = 80 + (std::rand() % 40);  // 4-6秒恐慌（加速摆腿+加速移动）
+        }
+        // 蜘蛛被攻击后标记为被激怒，白天也会追踪玩家
+        if (mobType == MobType::Spider) {
+            provoked = true;
         }
     }
 }
@@ -548,6 +675,23 @@ void MobEntity::spawnLoot(World& world, EntityManager& mgr) {
     default:
         break;
     }
+
+    // MC 原版经验球掉落（只有被玩家击杀才掉经验）
+    int xpDrop = 0;
+    switch (mobType) {
+    case MobType::Pig:     xpDrop = 1 + std::rand() % 3; break; // 1-3
+    case MobType::Cow:     xpDrop = 1 + std::rand() % 3; break; // 1-3
+    case MobType::Sheep:   xpDrop = 1 + std::rand() % 3; break; // 1-3
+    case MobType::Chicken: xpDrop = 1 + std::rand() % 3; break; // 1-3
+    case MobType::Zombie:  xpDrop = 5;                    break; // 5
+    case MobType::Skeleton:xpDrop = 5;                    break; // 5
+    case MobType::Spider:  xpDrop = 5;                    break; // 5
+    case MobType::Creeper: xpDrop = 5;                    break; // 5
+    default: break;
+    }
+    if (xpDrop > 0) {
+        mgr.spawnXPOrbs(position, xpDrop);
+    }
 }
 
 // ========== 燃烧 ==========
@@ -556,23 +700,33 @@ void MobEntity::tickBurning(World& world) {
     const auto& props = MobRegistry::instance().get(mobType);
     if (!props.burnInSunlight) return;
 
-    // 检查是否在阳光下（简化：Y坐标以上没有实心方块）
-    int bx = static_cast<int>(std::floor(position.x));
-    int bz = static_cast<int>(std::floor(position.z));
-    int by = static_cast<int>(std::floor(position.y + halfExtents.y));
+    // MC原版燃烧条件：白天 + 头顶无遮挡
+    // 夜晚不燃烧，有遮挡不燃烧
+    bool isDaytime = sDayNight ? sDayNight->isDay() : true;
 
-    bool exposed = true;
-    for (int y = by + 1; y < 256; y++) {
-        BlockId b = world.getBlock(bx, y, bz);
-        if (BlockRegistry::instance().isSolid(b) || BlockRegistry::instance().isLiquid(b)) {
-            exposed = false;
-            break;
+    if (isDaytime) {
+        // 检查头顶是否有遮挡
+        // 优化：不遍历到256，而是从头顶向上最多搜索64格
+        // 大多数情况下很快就能找到遮挡或确认暴露
+        int bx = static_cast<int>(std::floor(position.x));
+        int bz = static_cast<int>(std::floor(position.z));
+        int by = static_cast<int>(std::floor(position.y + halfExtents.y));
+        int maxY = std::min(by + 64, 255); // 最多向上检查64格
+
+        bool exposed = true;
+        for (int y = by + 1; y <= maxY; y++) {
+            BlockId b = world.getBlock(bx, y, bz);
+            if (BlockRegistry::instance().isSolid(b) || BlockRegistry::instance().isLiquid(b)) {
+                exposed = false;
+                break;
+            }
+        }
+
+        if (exposed && fireTicks <= 0) {
+            fireTicks = 160;  // 8秒燃烧
         }
     }
-
-    if (exposed && fireTicks <= 0) {
-        fireTicks = 160;  // 8秒燃烧
-    }
+    // 夜晚不会新增燃烧，但已有的燃烧继续消耗（MC原版行为）
 
     if (fireTicks > 0) {
         fireTicks--;

@@ -81,6 +81,7 @@ bool VulkanEngine::init(int width, int height, const char* title) {
     createSyncObjects();
     createDescriptorSetLayout();
     createGraphicsPipeline();
+    createSkyPipeline();
     createUIPipeline();
     createDescriptorPool();
     createUniformBuffers();
@@ -532,6 +533,105 @@ void VulkanEngine::createGraphicsPipeline() {
             vkDestroyPipeline(device_, transparentPipeline_, nullptr);
         });
     }
+}
+
+void VulkanEngine::createSkyPipeline() {
+    auto vertModule = createShaderModule(std::string(SHADER_DIR) + "/sky.vert.spv");
+    auto fragModule = createShaderModule(std::string(SHADER_DIR) + "/sky.frag.spv");
+
+    VkPipelineShaderStageCreateInfo vertStage{VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO};
+    vertStage.stage = VK_SHADER_STAGE_VERTEX_BIT;
+    vertStage.module = vertModule;
+    vertStage.pName = "main";
+
+    VkPipelineShaderStageCreateInfo fragStage{VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO};
+    fragStage.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+    fragStage.module = fragModule;
+    fragStage.pName = "main";
+
+    VkPipelineShaderStageCreateInfo stages[] = {vertStage, fragStage};
+
+    // 无顶点输入（全屏三角形通过 gl_VertexIndex 生成）
+    VkPipelineVertexInputStateCreateInfo vertexInput{VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
+    vertexInput.vertexBindingDescriptionCount = 0;
+    vertexInput.vertexAttributeDescriptionCount = 0;
+
+    VkPipelineInputAssemblyStateCreateInfo inputAssembly{VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
+    inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+
+    VkPipelineViewportStateCreateInfo viewportState{VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO};
+    viewportState.viewportCount = 1;
+    viewportState.scissorCount = 1;
+
+    VkPipelineRasterizationStateCreateInfo raster{VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO};
+    raster.polygonMode = VK_POLYGON_MODE_FILL;
+    raster.lineWidth = 1.0f;
+    raster.cullMode = VK_CULL_MODE_NONE;
+    raster.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+
+    VkPipelineMultisampleStateCreateInfo multisampling{VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO};
+    multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+
+    // 深度测试：写入关闭，测试设为 LESS_OR_EQUAL（z=1.0 通过）
+    VkPipelineDepthStencilStateCreateInfo depthStencil{VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO};
+    depthStencil.depthTestEnable = VK_TRUE;
+    depthStencil.depthWriteEnable = VK_FALSE;
+    depthStencil.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
+
+    VkPipelineColorBlendAttachmentState colorBlendAttachment{};
+    colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+                                           VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+    colorBlendAttachment.blendEnable = VK_FALSE;
+
+    VkPipelineColorBlendStateCreateInfo colorBlend{VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
+    colorBlend.attachmentCount = 1;
+    colorBlend.pAttachments = &colorBlendAttachment;
+
+    std::array<VkDynamicState, 2> dynamicStates = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
+    VkPipelineDynamicStateCreateInfo dynamicState{VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO};
+    dynamicState.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
+    dynamicState.pDynamicStates = dynamicStates.data();
+
+    // Push constant: SkyParams (4 * vec4 = 64 bytes)
+    VkPushConstantRange pushConstRange{};
+    pushConstRange.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    pushConstRange.offset = 0;
+    pushConstRange.size = 4 * sizeof(glm::vec4);  // 64 bytes
+
+    VkPipelineLayoutCreateInfo layoutInfo{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
+    layoutInfo.setLayoutCount = 1;
+    layoutInfo.pSetLayouts = &descriptorSetLayout_;
+    layoutInfo.pushConstantRangeCount = 1;
+    layoutInfo.pPushConstantRanges = &pushConstRange;
+
+    vkCreatePipelineLayout(device_, &layoutInfo, nullptr, &skyPipelineLayout_);
+
+    VkGraphicsPipelineCreateInfo pipelineInfo{VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
+    pipelineInfo.stageCount = 2;
+    pipelineInfo.pStages = stages;
+    pipelineInfo.pVertexInputState = &vertexInput;
+    pipelineInfo.pInputAssemblyState = &inputAssembly;
+    pipelineInfo.pViewportState = &viewportState;
+    pipelineInfo.pRasterizationState = &raster;
+    pipelineInfo.pMultisampleState = &multisampling;
+    pipelineInfo.pDepthStencilState = &depthStencil;
+    pipelineInfo.pColorBlendState = &colorBlend;
+    pipelineInfo.pDynamicState = &dynamicState;
+    pipelineInfo.layout = skyPipelineLayout_;
+    pipelineInfo.renderPass = renderPass_;
+    pipelineInfo.subpass = 0;
+
+    if (vkCreateGraphicsPipelines(device_, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &skyPipeline_) != VK_SUCCESS) {
+        throw std::runtime_error("Failed to create sky pipeline");
+    }
+
+    vkDestroyShaderModule(device_, vertModule, nullptr);
+    vkDestroyShaderModule(device_, fragModule, nullptr);
+
+    mainDeletionQueue_.push([this]() {
+        vkDestroyPipeline(device_, skyPipeline_, nullptr);
+        vkDestroyPipelineLayout(device_, skyPipelineLayout_, nullptr);
+    });
 }
 
 void VulkanEngine::createUIPipeline() {
@@ -1056,6 +1156,46 @@ void VulkanEngine::destroyTexture(AllocatedImage& image) {
         vmaDestroyImage(allocator_, image.image, image.allocation);
     }
     image = {};
+}
+
+void VulkanEngine::updateTextureRegion(AllocatedImage& image, const uint8_t* pixels,
+                                        int offsetX, int offsetY, int width, int height) {
+    VkDeviceSize imageSize = width * height * 4;
+
+    // 创建 staging buffer
+    auto staging = createBuffer(imageSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_ONLY);
+    void* data;
+    vmaMapMemory(allocator_, staging.allocation, &data);
+    memcpy(data, pixels, imageSize);
+    vmaUnmapMemory(allocator_, staging.allocation);
+
+    // 转换布局为 TRANSFER_DST
+    transitionImageLayout(image.image, VK_FORMAT_R8G8B8A8_SRGB,
+                          VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                          VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+
+    // 拷贝 buffer 到 image 子区域
+    auto cmd = beginSingleTimeCommands();
+    VkBufferImageCopy region{};
+    region.bufferOffset = 0;
+    region.bufferRowLength = 0;
+    region.bufferImageHeight = 0;
+    region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    region.imageSubresource.mipLevel = 0;
+    region.imageSubresource.baseArrayLayer = 0;
+    region.imageSubresource.layerCount = 1;
+    region.imageOffset = {offsetX, offsetY, 0};
+    region.imageExtent = {static_cast<uint32_t>(width), static_cast<uint32_t>(height), 1};
+    vkCmdCopyBufferToImage(cmd, staging.buffer, image.image,
+                           VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+    endSingleTimeCommands(cmd);
+
+    // 转换回 SHADER_READ_ONLY
+    transitionImageLayout(image.image, VK_FORMAT_R8G8B8A8_SRGB,
+                          VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                          VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+
+    vmaDestroyBuffer(allocator_, staging.buffer, staging.allocation);
 }
 
 void VulkanEngine::updateTextureDescriptor(VkImageView imageView, VkSampler sampler) {

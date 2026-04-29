@@ -58,6 +58,11 @@ public:
     bool inWater   = false;  // head submerged in water
     bool isSwimming = false; // actively swimming (space in water)
 
+    // 经验值系统（MC 原版）
+    int  xpLevel      = 0;     // 当前等级
+    int  xpTotal      = 0;     // 累计总经验值
+    float xpProgress  = 0.0f;  // 当前等级进度 (0.0 ~ 1.0)
+
     // Damage the player. Clamps to 0; sets dead flag. Returns actual damage dealt.
     int takeDamage(int amount);
 
@@ -70,6 +75,12 @@ public:
 
     // Full heal + reset state. Used on respawn.
     void respawn();
+
+    // 经验值系统
+    void addXP(int amount);                    // 增加经验值，自动升级
+    int  xpForLevel(int level) const;          // MC 原版：升到 level 需要的经验值
+    int  xpToNextLevel() const;                // 当前等级升级还需多少经验
+    int  xpAtCurrentLevel() const;             // 当前等级已积累的经验值
 
     // Selected block for placement
     BlockId selectedBlock = Block::Grass;

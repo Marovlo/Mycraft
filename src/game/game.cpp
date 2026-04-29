@@ -10,6 +10,7 @@
 #include "core/item.h"
 #include "core/debug.h"
 #include "core/serialization.h"
+#include "entity/mob_entity.h"
 #include "world/light_engine.h"
 #include <unordered_map>
 #include <filesystem>
@@ -39,6 +40,7 @@ Game::~Game() {
     }
     blockModel_.destroy(engine_);
     entityRenderer_.destroy();
+    particleSystem_.destroy();
     mobRenderer_.destroy();
     uiRenderer_.destroy();
     textureAtlas_.destroy(engine_);
@@ -92,6 +94,12 @@ void Game::registerBlockInteractions() {
     blockInteraction_.onBlockBroken = [this](BlockId blockId, int bx, int by, int bz,
                                               EntityManager& entityMgr) {
         glm::vec3 centre(bx + 0.5f, by + 0.5f, bz + 0.5f);
+
+        // 生成方块破坏粒子
+        const auto& blockDef = BlockRegistry::instance().get(blockId);
+        uint16_t tileIdx = blockDef.textures.top; // 使用顶面纹理作为碎片
+        particleSystem_.spawnBlockBreak(glm::vec3(bx, by, bz), tileIdx);
+
         if (blockId == Block::Chest) {
             auto contents = chestManager_.remove(bx, by, bz);
             for (const auto& slot : contents) {
@@ -159,6 +167,7 @@ void Game::init() {
     uiRenderer_.setAtlas(&textureAtlas_);
     blockModel_.init(engine_, textureAtlas_);
     entityRenderer_.init(&engine_, &textureAtlas_);
+    particleSystem_.init(&engine_, &textureAtlas_);
     mobRenderer_.init(&engine_);
     {
         std::string mobTexDir = std::string(ASSET_DIR) + "/textures/mobs";
@@ -178,6 +187,14 @@ void Game::init() {
     // 初始化多线程区块任务管理器
     // numThreads=0 表示自动检测（物理核心数-1，至少2）
     chunkTaskMgr_.init(0, terrainGen_.get(), &saveManager_, &textureAtlas_);
+
+    // 初始化方块更新系统（沙子下落、水流动）
+    blockUpdateSystem_.init();
+
+    // 设置方块变更回调：当方块被放置/破坏时通知方块更新系统
+    world_.setBlockChangeCallback([this](int x, int y, int z, BlockId oldId, BlockId newId) {
+        blockUpdateSystem_.notifyNeighbors(world_, x, y, z, tickClock_.getTotalTicks());
+    });
 
     // Try loading player data from existing save
     bool playerLoaded = false;
@@ -346,6 +363,10 @@ void Game::loadTextureAtlas() {
 
     engine_.updateTextureDescriptor(textureAtlas_.getImage().imageView, engine_.getDefaultSampler());
     meshBuilder_.setAtlas(&textureAtlas_);
+
+    // 初始化纹理动画（水、岩浆等）
+    std::string vanillaBlockDir = std::string(ASSET_DIR) + "/minecraft_vanilla/textures/block";
+    textureAnimator_.init(vanillaBlockDir, textureAtlas_, 16);
 }
 
 // ============================================================
@@ -467,20 +488,12 @@ void Game::update(float dt) {
     hud_.draw(sw, sh, inventory_, bProg, tickClock_.getTotalTicks(),
               player_.hp, player_.maxHp, player_.hunger, player_.maxHunger,
               player_.dead, player_.isEating, player_.air, player_.maxAir,
-              player_.hurtTicks, targetingMob_);
+              player_.hurtTicks, targetingMob_,
+              player_.xpLevel, player_.xpProgress);
 
-    // FPS 显示（F3 切换）
-    if (showFps_) {
-        int scale = std::clamp(static_cast<int>(sh / 240.0f), 2, 4);
-        float glyphH = 7.0f * scale;
-        float pad = 4.0f * scale;
-        std::string fpsStr = std::to_string(fps_) + " FPS";
-        // 半透明黑色背景
-        float bgW = fpsStr.size() * (glyphH * 0.6f + glyphH * 0.1f) + pad;
-        float bgH = glyphH + pad;
-        uiRenderer_.drawRect(0, 0, bgW, bgH, glm::vec4(0.0f, 0.0f, 0.0f, 0.4f));
-        uiRenderer_.drawTextLeft(fpsStr, pad * 0.5f, pad * 0.5f, glyphH,
-                                 glm::vec4(1.0f, 1.0f, 1.0f, 0.9f));
+    // F3 调试屏幕
+    if (showDebug_) {
+        drawDebugScreen(sw, sh);
     }
 
     if (activeScreen_) {
@@ -494,6 +507,17 @@ void Game::update(float dt) {
 
     entityRenderer_.buildFrame(entityManager_, partial);
     mobRenderer_.buildFrame(entityManager_, partial, &dayNightCycle_);
+
+    // 粒子系统：更新物理 + 构建渲染 mesh
+    {
+        float dt = static_cast<float>(TickClock::TICK_DURATION);
+        particleSystem_.update(dt);
+        glm::vec3 camPos = player_.getEyePosition();
+        glm::vec3 camFront = player_.getForward();
+        glm::vec3 camRight = glm::normalize(glm::cross(camFront, glm::vec3(0, 1, 0)));
+        glm::vec3 camUp = glm::normalize(glm::cross(camRight, camFront));
+        particleSystem_.buildFrame(camPos, camRight, camUp);
+    }
     engine_.updateUniformBuffer(ubo);
 
     // 方块选择高亮 + 破坏裂纹覆盖层（game_highlight.cpp）
@@ -515,6 +539,9 @@ void Game::gameTick() {
 
     // 昼夜循环 — 使用 tick clock 的总 tick 数驱动
     dayNightCycle_.setTime(static_cast<uint32_t>(tickClock_.getTotalTicks() % 24000));
+
+    // 让生物系统能访问昼夜循环（用于阳光燃烧判定等）
+    MobEntity::sDayNight = &dayNightCycle_;
 
     // 玩家生存系统（game_survival.cpp）
     tickFallDamage();
@@ -541,6 +568,12 @@ void Game::gameTick() {
 
     // Tick all furnaces (smelting progress, fuel consumption)
     furnaceManager_.tick();
+
+    // 方块更新系统（沙子下落、水流动等计划刻）
+    blockUpdateSystem_.tick(world_, entityManager_, player_, tickClock_.getTotalTicks());
+
+    // 纹理动画（水、岩浆等帧动画）
+    textureAnimator_.tick(engine_, textureAtlas_);
 
     // --- Auto-save ---
     uint64_t ticks = tickClock_.getTotalTicks();
@@ -1078,7 +1111,15 @@ void Game::unloadDistantChunks() {
 // ============================================================
 
 void Game::render(VkCommandBuffer cmd) {
+    // === Pass 0: Sky (fullscreen triangle, no depth write) ===
+    skyRenderer_.render(cmd, engine_, dayNightCycle_);
+
     // === Pass 1: Opaque geometry (pipeline already bound by engine) ===
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, engine_.getPipeline());
+    auto& frame0 = engine_.getCurrentFrame();
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+        engine_.getPipelineLayout(), 0, 1, &frame0.descriptorSet, 0, nullptr);
+
     for (auto& [key, chunk] : world_.chunks()) {
         if (!chunk.hasMesh()) continue;
         const auto& mesh = chunk.getMesh();
@@ -1143,6 +1184,9 @@ void Game::render(VkCommandBuffer cmd) {
 
     // Entities (dropped items) — also through transparent pipeline for bobbing alpha
     entityRenderer_.render(cmd);
+
+    // 粒子系统渲染（方块碎片、爆炸、火焰等）
+    particleSystem_.render(cmd);
 
     // Mob entities — 使用独立的 descriptor set 渲染，不影响方块纹理
     if (mobRenderer_.hasMobAtlas() && mobRenderer_.hasContent()) {

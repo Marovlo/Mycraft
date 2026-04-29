@@ -14,6 +14,7 @@ enum class EntityKind : uint8_t {
     Item,
     Mob,
     Arrow,
+    XPOrb,
 };
 
 // Base class for everything that lives in the world besides the player and

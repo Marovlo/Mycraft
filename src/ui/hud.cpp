@@ -32,7 +32,7 @@ void HUD::draw(float screenW, float screenH, const Inventory& inventory,
                float breakProgress, int gameTicks,
                int hp, int maxHp, int hunger, int maxHunger, bool isDead,
                bool isEating, int air, int maxAir, int hurtTicks,
-               bool targetingMob) {
+               bool targetingMob, int xpLevel, float xpProgress) {
     int   scale     = getGuiScale(screenH);
     float slotPx    = SLOT_SIZE * scale;
     float gapPx     = GAP       * scale;
@@ -290,6 +290,36 @@ void HUD::draw(float screenW, float screenH, const Inventory& inventory,
                 ui_->drawText(nameProps.displayName, screenW * 0.5f, nameY, nameH,
                               glm::vec4(1.0f, 1.0f, 1.0f, 0.9f));
             }
+        }
+    }
+
+    // 7b) 经验条 — MC 原版：位于快捷栏上方，绿色进度条 + 等级数字
+    if (!isDead) {
+        float barH = 3.0f * scale;
+        float barW = Inventory::HOTBAR_SIZE * slotPx + (Inventory::HOTBAR_SIZE - 1) * gapPx;
+        float barX = startX;
+        float barY = startY - barH - 1.0f * scale;
+
+        // 经验条背景（深色）
+        ui_->drawRect(barX, barY, barW, barH, glm::vec4(0.0f, 0.0f, 0.0f, 0.6f));
+
+        // 经验条填充（绿色）
+        if (xpProgress > 0.0f) {
+            float fillW = barW * std::clamp(xpProgress, 0.0f, 1.0f);
+            ui_->drawRect(barX, barY, fillW, barH, glm::vec4(0.3f, 0.9f, 0.1f, 0.9f));
+        }
+
+        // 等级数字（显示在经验条上方中央）
+        if (xpLevel > 0) {
+            float numH = 6.0f * scale;
+            float numY = barY - numH - 1.0f * scale;
+            // 绿色数字带黑色描边效果
+            // 先画黑色阴影
+            ui_->drawNumber(xpLevel, screenW * 0.5f + 1.0f * scale, numY + 1.0f * scale, numH,
+                            glm::vec4(0.0f, 0.0f, 0.0f, 0.8f));
+            // 再画绿色数字
+            ui_->drawNumber(xpLevel, screenW * 0.5f, numY, numH,
+                            glm::vec4(0.5f, 1.0f, 0.2f, 1.0f));
         }
     }
 

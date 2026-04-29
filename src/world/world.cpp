@@ -41,12 +41,15 @@ void World::setBlock(int x, int y, int z, BlockId id) {
     if (lz == CHUNK_SIZE - 1) markChunkDirty(cx, cz + 1);
 
     // 只有当方块的不透明性或发光属性发生变化时，才需要重算光照。
-    // 例如：打掉花草/蘑菇（透明→Air透明，都不发光）不需要重算。
-    // 这避免了每次破坏 hardness=0 的装饰方块时执行 R=16 球体的光照 BFS。
     bool newOpaque = reg.isOpaque(id);
     uint8_t newEmit = reg.get(id).lightEmit;
     if (oldOpaque != newOpaque || oldEmit != newEmit) {
         LightEngine::updateAfterBlockChange(*this, x, y, z);
+    }
+
+    // 通知方块更新系统（沙子下落、水流动等）
+    if (blockChangeCallback_) {
+        blockChangeCallback_(x, y, z, oldId, id);
     }
 }
 

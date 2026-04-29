@@ -68,6 +68,53 @@ void Player::respawn() {
     onGround = false;
     eatingTicks = 0;
     isEating = false;
+    // MC 原版：死亡时丢失所有经验（简化：直接清零）
+    xpLevel = 0;
+    xpTotal = 0;
+    xpProgress = 0.0f;
+}
+
+// ========== 经验值系统（MC 原版公式） ==========
+
+int Player::xpForLevel(int level) const {
+    // MC Java 1.8+ 升级所需经验公式：
+    // Level 0-16:  2*level + 7
+    // Level 17-31: 5*level - 38
+    // Level 32+:   9*level - 158
+    if (level <= 16) return 2 * level + 7;
+    if (level <= 31) return 5 * level - 38;
+    return 9 * level - 158;
+}
+
+int Player::xpToNextLevel() const {
+    return xpForLevel(xpLevel);
+}
+
+int Player::xpAtCurrentLevel() const {
+    // 从 xpTotal 反推当前等级已积累的经验
+    int totalForCurrentLevel = 0;
+    for (int i = 0; i < xpLevel; i++) {
+        totalForCurrentLevel += xpForLevel(i);
+    }
+    return xpTotal - totalForCurrentLevel;
+}
+
+void Player::addXP(int amount) {
+    if (amount <= 0) return;
+    xpTotal += amount;
+
+    // 重新计算等级和进度
+    int remaining = xpTotal;
+    int level = 0;
+    while (true) {
+        int needed = xpForLevel(level);
+        if (remaining < needed) break;
+        remaining -= needed;
+        level++;
+    }
+    xpLevel = level;
+    int needed = xpForLevel(level);
+    xpProgress = (needed > 0) ? static_cast<float>(remaining) / needed : 0.0f;
 }
 
 void Player::serialize(BinaryWriter& w) const {
@@ -96,6 +143,11 @@ void Player::serialize(BinaryWriter& w) const {
     w.writeF32(spawnPoint.x);
     w.writeF32(spawnPoint.y);
     w.writeF32(spawnPoint.z);
+
+    // 经验值
+    w.writeI32(xpLevel);
+    w.writeI32(xpTotal);
+    w.writeF32(xpProgress);
 }
 
 void Player::deserialize(BinaryReader& r) {
@@ -124,6 +176,11 @@ void Player::deserialize(BinaryReader& r) {
     spawnPoint.x = r.readF32();
     spawnPoint.y = r.readF32();
     spawnPoint.z = r.readF32();
+
+    // 经验值
+    xpLevel = r.readI32();
+    xpTotal = r.readI32();
+    xpProgress = r.readF32();
 
     // Reset transient state
     velocity = glm::vec3(0.0f);

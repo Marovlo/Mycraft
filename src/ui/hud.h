@@ -22,7 +22,8 @@ public:
               float breakProgress, int gameTicks,
               int hp, int maxHp, int hunger, int maxHunger, bool isDead,
               bool isEating = false, int air = 300, int maxAir = 300,
-              int hurtTicks = 0, bool targetingMob = false);
+              int hurtTicks = 0, bool targetingMob = false,
+              int xpLevel = 0, float xpProgress = 0.0f);
 
 private:
     UIRenderer* ui_ = nullptr;

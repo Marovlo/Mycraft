@@ -134,6 +134,10 @@ public:
     AllocatedImage uploadTexture(const uint8_t* pixels, int width, int height, int channels);
     void destroyTexture(AllocatedImage& image);
 
+    // Update a sub-region of an existing texture (for animated textures)
+    void updateTextureRegion(AllocatedImage& image, const uint8_t* pixels,
+                             int offsetX, int offsetY, int width, int height);
+
     // Callbacks
     std::function<void(float deltaTime)> onUpdate;
     std::function<void(VkCommandBuffer cmd, uint32_t frameIndex)> onRender;
@@ -175,6 +179,10 @@ public:
     // Transparent 3D pipeline (same layout as opaque, but alpha blend + no depth write)
     VkPipeline getTransparentPipeline() const { return transparentPipeline_; }
 
+    // Sky pipeline (no depth write, no vertex input, fullscreen triangle)
+    VkPipeline getSkyPipeline() const { return skyPipeline_; }
+    VkPipelineLayout getSkyPipelineLayout() const { return skyPipelineLayout_; }
+
 private:
     // Init steps
     void initVulkan();
@@ -185,6 +193,7 @@ private:
     void createSyncObjects();
     void createDescriptorSetLayout();
     void createGraphicsPipeline();
+    void createSkyPipeline();
     void createUIPipeline();
     void createDepthResources();
     void createDescriptorPool();
@@ -243,6 +252,10 @@ private:
 
     // Pipeline (3D world — transparent pass: alpha blend ON, depth write OFF)
     VkPipeline transparentPipeline_ = VK_NULL_HANDLE;
+
+    // Pipeline (sky — no depth write, rendered first)
+    VkPipelineLayout skyPipelineLayout_ = VK_NULL_HANDLE;
+    VkPipeline skyPipeline_ = VK_NULL_HANDLE;
 
     // Pipeline (2D UI overlay)
     VkPipelineLayout uiPipelineLayout_ = VK_NULL_HANDLE;

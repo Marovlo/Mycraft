@@ -9,6 +9,10 @@
 #include "world/terrain_generator.h"
 #include "renderer/mesh_builder.h"
 #include "renderer/texture_atlas.h"
+#include "renderer/texture_animator.h"
+#include "world/block_update_system.h"
+#include "renderer/particle_system.h"
+#include "renderer/sky_renderer.h"
 #include "renderer/ui_renderer.h"
 #include "renderer/block_model.h"
 #include "renderer/entity_renderer.h"
@@ -82,6 +86,7 @@ private:
 
     // 调试命令（game_debug.cpp）
     void handleDebugKeys();
+    void drawDebugScreen(float screenW, float screenH);
 
     // 控制台命令注册（game_console_cmds.cpp）
     void registerConsoleCommands();
@@ -107,6 +112,7 @@ private:
     BlockInteraction blockInteraction_;
     EntityManager    entityManager_;
     EntityRenderer   entityRenderer_;
+    ParticleSystem   particleSystem_;
     MobRenderer      mobRenderer_;
     MobSpawner       mobSpawner_;
     DayNightCycle    dayNightCycle_;
@@ -147,6 +153,9 @@ private:
     bool   sprintToggled_  = false;
 
     TextureAtlas textureAtlas_;
+    TextureAnimator textureAnimator_;
+    BlockUpdateSystem blockUpdateSystem_;
+    SkyRenderer skyRenderer_;
 
     int playerChunkX_ = 0;
     int playerChunkZ_ = 0;
@@ -177,8 +186,8 @@ private:
     // 玩家攻击生物（game_survival.cpp）
     void tickPlayerAttack();
 
-    // FPS 显示（F3 切换）
-    bool showFps_ = false;
+    // F3 调试屏幕
+    bool showDebug_ = false;
     int  fps_     = 0;       // 当前显示的 FPS 值
     int  fpsFrameCount_ = 0; // 当前秒内的帧计数
     double fpsTimer_ = 0.0;  // 累计时间（秒）

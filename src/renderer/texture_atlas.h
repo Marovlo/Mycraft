@@ -53,4 +53,7 @@ private:
 public:
     const std::vector<uint8_t>& getCpuPixels() const { return cpuPixels_; }
     uint32_t getAtlasPixelSize() const { return atlasPixelSize_; }
+
+    // 动态更新图集中某个 tile 的像素数据（用于纹理动画）
+    void updateTile(VulkanEngine& engine, uint16_t tileIndex, const uint8_t* rgbaPixels);
 };
