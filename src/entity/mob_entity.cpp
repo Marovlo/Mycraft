@@ -6,6 +6,7 @@
 #include "player/inventory.h"
 #include "core/block.h"
 #include "core/item.h"
+#include "audio/sound_engine.h"
 #include <cmath>
 #include <algorithm>
 #include <queue>
@@ -241,6 +242,29 @@ void MobEntity::tick(World& world, EntityManager& mgr,
     if (hurtTicks > 0) hurtTicks--;
     if (attackCooldown > 0) attackCooldown--;
     if (panicTicks > 0) panicTicks--;
+
+    // MC 原版：生物随机环境叫声（每 80~200 tick 随机触发一次）
+    if (ambientSoundTimer_ <= 0) {
+        // 播放环境叫声
+        SoundEventId ambientSound = SoundEventId::Count; // 无效值表示无音效
+        switch (mobType) {
+            case MobType::Cow:      ambientSound = SoundEventId::MobCowSay; break;
+            case MobType::Pig:      ambientSound = SoundEventId::MobPigSay; break;
+            case MobType::Sheep:    ambientSound = SoundEventId::MobSheepSay; break;
+            case MobType::Chicken:  ambientSound = SoundEventId::MobChickenSay; break;
+            case MobType::Zombie:   ambientSound = SoundEventId::MobZombieSay; break;
+            case MobType::Skeleton: ambientSound = SoundEventId::MobSkeletonSay; break;
+            case MobType::Spider:   ambientSound = SoundEventId::MobSpiderSay; break;
+            default: break;
+        }
+        if (ambientSound != SoundEventId::Count) {
+            getSoundEngine().play(ambientSound, position, 0.4f);
+        }
+        // 重置计时器：MC 原版约 80~200 tick 间隔
+        ambientSoundTimer_ = 80 + (tickCount % 120);
+    } else {
+        ambientSoundTimer_--;
+    }
 
     // 重力
     if (!onGround) {
@@ -530,6 +554,9 @@ void MobEntity::tickHostileAI(World& world, Player& player, EntityManager& mgr) 
         }
         if (fuseTimer <= 0) {
             // 爆炸！
+            // 播放爆炸音效
+            getSoundEngine().play(SoundEventId::Explode, position, 1.0f);
+
             // 对玩家造成范围伤害
             if (distToPlayer < 6.0f) {
                 float dmgFactor = 1.0f - (distToPlayer / 6.0f);
@@ -614,10 +641,32 @@ void MobEntity::takeDamage(int amount, const glm::vec3& knockbackDir) {
     velocity += knockbackDir * 8.0f;
     velocity.y += 5.0f;
 
+    // 播放生物受伤音效
+    SoundEventId hurtSound = SoundEventId::DamageHit;
+    switch (mobType) {
+        case MobType::Cow:      hurtSound = SoundEventId::MobCowHurt; break;
+        case MobType::Zombie:   hurtSound = SoundEventId::MobZombieHurt; break;
+        case MobType::Skeleton: hurtSound = SoundEventId::MobSkeletonHurt; break;
+        default: break; // 其他生物用通用受伤音效
+    }
+    getSoundEngine().play(hurtSound, position, 0.5f);
+
     if (hp <= 0) {
         hp = 0;
         isDying = true;
         deathTicks = 0;
+
+        // 播放生物死亡音效
+        SoundEventId deathSound = SoundEventId::DamageHit;
+        switch (mobType) {
+            case MobType::Pig:      deathSound = SoundEventId::MobPigDeath; break;
+            case MobType::Zombie:   deathSound = SoundEventId::MobZombieDeath; break;
+            case MobType::Skeleton: deathSound = SoundEventId::MobSkeletonDeath; break;
+            case MobType::Spider:   deathSound = SoundEventId::MobSpiderDeath; break;
+            case MobType::Creeper:  deathSound = SoundEventId::MobCreeperDeath; break;
+            default: break;
+        }
+        getSoundEngine().play(deathSound, position, 0.6f);
     } else {
         // 被动生物受伤后逃跑 + 恐慌加速
         const auto& props = MobRegistry::instance().get(mobType);

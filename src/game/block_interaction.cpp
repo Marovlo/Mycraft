@@ -2,6 +2,8 @@
 #include "core/tick_clock.h"
 #include "core/debug.h"
 #include "entity/entity_manager.h"
+#include "audio/sound_engine.h"
+#include "audio/block_sound_map.h"
 
 void BlockInteraction::reset() {
     state_ = {};
@@ -137,7 +139,14 @@ void BlockInteraction::tick(World& world, Player& player, Inventory& inventory,
             onBlockBroken(state_.blockId, state_.blockX, state_.blockY, state_.blockZ, entityMgr);
         }
 
-        // 3) Remove the block. World marks neighbors dirty on its own.
+        // 3) 播放方块破坏音效（在移除方块之前，此时还能获取方块类型）
+        {
+            SoundMaterial mat = BlockSoundMap::instance().getMaterial(state_.blockId);
+            glm::vec3 blockCenter(state_.blockX + 0.5f, state_.blockY + 0.5f, state_.blockZ + 0.5f);
+            getSoundEngine().playBlockBreak(mat, blockCenter);
+        }
+
+        // 4) Remove the block. World marks neighbors dirty on its own.
         world.setBlock(state_.blockX, state_.blockY, state_.blockZ, Block::Air);
 
         // 4) Cost durability on the currently-held tool.

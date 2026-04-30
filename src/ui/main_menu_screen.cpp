@@ -8,6 +8,7 @@
 #include <sstream>
 #include <iomanip>
 #include "core/serialization.h"
+#include "audio/sound_engine.h"
 
 namespace fs = std::filesystem;
 
@@ -50,6 +51,8 @@ MainMenuScreen::Action MainMenuScreen::update(InputManager& input, float screenW
     }
 
     if (input.isMouseButtonPressed(GLFW_MOUSE_BUTTON_LEFT) && hoveredButton_ >= 0) {
+        // MC 原版：UI 按钮点击音效
+        getSoundEngine().play2D(SoundEventId::UIButtonClick, 0.5f);
         switch (hoveredButton_) {
             case 0: return Action::SinglePlayer;
             case 1: return Action::Quit;
@@ -206,12 +209,14 @@ WorldSelectScreen::Result WorldSelectScreen::update(InputManager& input, float s
         if (input.isMouseButtonPressed(GLFW_MOUSE_BUTTON_LEFT)) {
             if (deleteHoveredBtn_ == 0) {
                 // 确认删除
+                getSoundEngine().play2D(SoundEventId::UIButtonClick, 0.5f);
                 showDeleteConfirm_ = false;
                 Result r;
                 r.action = Action::DeleteWorld;
                 r.worldIndex = deleteTargetIndex_;
                 return r;
             } else if (deleteHoveredBtn_ == 1) {
+                getSoundEngine().play2D(SoundEventId::UIButtonClick, 0.5f);
                 showDeleteConfirm_ = false;
             }
         }
@@ -292,6 +297,8 @@ WorldSelectScreen::Result WorldSelectScreen::update(InputManager& input, float s
     }
 
     if (input.isMouseButtonPressed(GLFW_MOUSE_BUTTON_LEFT) && hoveredButton_ >= 0) {
+        // MC 原版：UI 按钮点击音效
+        getSoundEngine().play2D(SoundEventId::UIButtonClick, 0.5f);
         switch (hoveredButton_) {
             case 0:  // 进入游戏
                 if (selectedIndex_ >= 0) {
@@ -594,6 +601,7 @@ CreateWorldScreen::Result CreateWorldScreen::update(InputManager& input, float s
     if (input.isMouseButtonPressed(GLFW_MOUSE_BUTTON_LEFT)) {
         if (hoveredButton_ == 0 && !nameInput_.empty()) {
             // 创建世界
+            getSoundEngine().play2D(SoundEventId::UIButtonClick, 0.5f);
             Result r;
             r.action = Action::Create;
             r.worldName = nameInput_;
@@ -615,6 +623,7 @@ CreateWorldScreen::Result CreateWorldScreen::update(InputManager& input, float s
             }
             return r;
         } else if (hoveredButton_ == 1) {
+            getSoundEngine().play2D(SoundEventId::UIButtonClick, 0.5f);
             return {Action::Cancel, "", 0};
         }
     }

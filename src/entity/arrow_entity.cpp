@@ -5,6 +5,7 @@
 #include "player/inventory.h"
 #include "core/item.h"
 #include "core/block.h"
+#include "audio/sound_engine.h"
 #include <glm/gtc/constants.hpp>
 #include <cmath>
 
@@ -15,6 +16,9 @@ void ArrowEntity::launch(const glm::vec3& from, const glm::vec3& dir, float spd,
     speed = spd;
     damage = dmg;
     velocity = direction * speed;
+
+    // MC 原版：箭矢射出时播放弓箭音效
+    getSoundEngine().play(SoundEventId::BowShoot, from, 1.0f, 1.0f);
 
     // 计算初始朝向
     yaw = std::atan2(direction.x, direction.z);
@@ -150,6 +154,12 @@ bool ArrowEntity::checkPlayerCollision(Player& player) {
         nextPos.z >= pMin.z && nextPos.z <= pMax.z) {
         // 命中！造成伤害 + 击退
         player.takeDamage(damage);
+
+        // MC 原版：箭矢命中音效
+        getSoundEngine().play(SoundEventId::BowHit, nextPos, 0.8f);
+
+        // 播放玩家受伤音效
+        getSoundEngine().play(SoundEventId::DamageHit, player.position, 0.5f);
 
         // 击退方向：箭矢飞行方向的水平分量
         glm::vec3 hVel(velocity.x, 0.0f, velocity.z);

@@ -6,6 +6,7 @@
 #include "core/common.h"
 #include "core/tick_clock.h"
 #include "core/debug.h"
+#include "audio/sound_engine.h"
 #include <glm/glm.hpp>
 #include <cmath>
 
@@ -114,7 +115,12 @@ void ItemEntity::tick(World& world, EntityManager& /*mgr*/,
         VLOG(DebugCat::Entity,
              "pickup id=%u taken=%u leftover=%u", stack.id, before - leftover, leftover);
         if (stack.count == 0) {
+            // MC 原版：拾取物品播放 pop 音效
+            getSoundEngine().play(SoundEventId::ItemPickup, position, 0.3f);
             alive = false;
+        } else if (leftover < before) {
+            // 部分拾取也播放音效
+            getSoundEngine().play(SoundEventId::ItemPickup, position, 0.3f);
         }
     }
 }

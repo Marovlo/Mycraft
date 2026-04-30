@@ -3,6 +3,7 @@
 #include "player/player.h"
 #include "player/inventory.h"
 #include "entity_manager.h"
+#include "audio/sound_engine.h"
 #include <glm/glm.hpp>
 #include <cmath>
 #include <algorithm>
@@ -62,6 +63,8 @@ void XPOrbEntity::tick(World& world, EntityManager& mgr,
         // 拾取判定
         if (pickupDelayTicks <= 0 && distSq < PICKUP_RANGE * PICKUP_RANGE) {
             player.addXP(xpValue);
+            // MC 原版：拾取经验球播放 orb 音效
+            getSoundEngine().play2D(SoundEventId::XPOrbPickup, 0.2f);
             alive = false;
             return;
         }

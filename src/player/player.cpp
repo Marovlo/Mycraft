@@ -1,6 +1,7 @@
 #include "player.h"
 #include "world/world.h"
 #include "core/serialization.h"
+#include "audio/sound_engine.h"
 #include <cmath>
 #include <algorithm>
 
@@ -51,6 +52,10 @@ int Player::takeDamage(int amount) {
     int actual = std::min(amount, hp);
     hp -= actual;
     hurtTicks = 10;  // 0.5 seconds of screen shake
+
+    // MC 原版：玩家受伤播放 hit 音效
+    getSoundEngine().play(SoundEventId::DamageHit, position, 0.5f);
+
     if (hp <= 0) { hp = 0; dead = true; }
     return actual;
 }

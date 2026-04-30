@@ -117,6 +117,9 @@ public:
     int fireTicks = 0;
     int fireTimer = 0;         // 每秒伤害计时
 
+    // 环境叫声计时器（MC 原版：生物随机间隔发出叫声）
+    int ambientSoundTimer_ = 100;  // 初始延迟，避免生成时立即叫
+
     // 静态昼夜循环引用，由 Game::gameTick() 每 tick 设置
     static const DayNightCycle* sDayNight;
 

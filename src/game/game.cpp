@@ -21,6 +21,10 @@ Game::~Game() {
     // Shutdown thread pool before cleanup (wait for in-flight tasks)
     chunkTaskMgr_.shutdown();
 
+    // 关闭音效系统（在其他清理之前，避免音效回调访问已释放的资源）
+    musicManager_.shutdown();
+    getSoundEngine().shutdown();
+
     // Save all data before cleanup
     if (worldLoaded_) {
         saveAll();
@@ -189,6 +193,22 @@ void Game::init() {
     console_.init(&uiRenderer_);
     registerConsoleCommands();
 
+    // ===== 初始化音效系统 =====
+    {
+        std::string soundsPath = std::string(ASSET_DIR) + "/sounds/";
+        if (!getSoundEngine().init(soundsPath)) {
+            std::cerr << "Warning: failed to init sound engine\n";
+        }
+        BlockSoundMap::instance().init();
+
+        // 初始化背景音乐管理器（扫描 music/ 目录）
+        std::string musicPath = soundsPath + "music/";
+        if (getSoundEngine().isInitialized()) {
+            musicManager_.init(getSoundEngine().getEngine(), musicPath);
+        }
+        // 当前无版权音乐文件，MusicManager 会自动检测并跳过播放
+    }
+
     // 设置引擎回调
     engine_.onUpdate = [this](float dt) { update(dt); };
     engine_.onRender = [this](VkCommandBuffer cmd, uint32_t) { render(cmd); };
@@ -303,6 +323,10 @@ void Game::enterWorld(const std::string& worldName, int64_t seed) {
         inventory_.getSlot(3) = {Item::WoodenPickaxe,  1, 0};
         inventory_.getSlot(4) = {Item::Torch,          64, 0};
     }
+
+    // 重置行走音效计时器
+    stepSoundDistance_ = 0.0f;
+    digSoundTimer_ = 0;
 
     // 切换到游戏状态
     gameState_ = GameState::Playing;
@@ -663,6 +687,20 @@ void Game::update(float dt) {
 
     // 方块选择高亮 + 破坏裂纹覆盖层（game_highlight.cpp）
     updateBlockHighlight();
+
+    // ===== 音效系统每帧更新 =====
+    {
+        // 更新听者位置（玩家摄像机）
+        glm::vec3 listenerPos = player_.getEyePosition();
+        glm::vec3 listenerFwd = player_.getForward();
+        getSoundEngine().setListenerPosition(listenerPos, listenerFwd, glm::vec3(0, 1, 0));
+
+        // 回收已播放完毕的音效实例
+        getSoundEngine().update();
+
+        // 背景音乐更新
+        musicManager_.update(dt);
+    }
 }
 
 void Game::gameTick() {
@@ -703,13 +741,52 @@ void Game::gameTick() {
     blockInteraction_.tick(world_, player_, inventory_, entityManager_,
                             leftMouseHeld_, MAX_REACH);
 
-    // 挖掘时持续触发挥动动画（MC 原版行为）
+    // 挖掘时持续触发挥动动画 + 挖掘音效（MC 原版行为）
     {
         int bx, by, bz;
         float prog;
         if (blockInteraction_.getActiveBreak(bx, by, bz, prog)) {
             player_.startSwing();
+
+            // MC 原版：挖掘过程中每 4 tick 播放一次挖掘音效
+            digSoundTimer_++;
+            if (digSoundTimer_ >= 4) {
+                digSoundTimer_ = 0;
+                BlockId bid = world_.getBlock(bx, by, bz);
+                SoundMaterial mat = BlockSoundMap::instance().getMaterial(bid);
+                glm::vec3 blockCenter(bx + 0.5f, by + 0.5f, bz + 0.5f);
+                getSoundEngine().play(SoundEngine::getDigEvent(mat), blockCenter, 0.25f, 0.5f);
+            }
+        } else {
+            digSoundTimer_ = 0;
         }
+    }
+
+    // ===== 行走音效 =====
+    // MC 原版：玩家在地面移动时，每走一定距离播放脚步声
+    if (player_.onGround && !player_.dead) {
+        glm::vec3 delta = player_.position - prevPlayerPos_;
+        delta.y = 0.0f; // 只计算水平移动
+        float dist = glm::length(delta);
+        if (dist > 0.001f) {
+            stepSoundDistance_ += dist;
+            // MC 原版：行走约 0.6 格播放一次，冲刺约 0.35 格
+            float threshold = player_.sprinting ? 0.35f : 0.6f;
+            if (stepSoundDistance_ >= threshold) {
+                stepSoundDistance_ = 0.0f;
+                // 获取脚下方块的音效材质
+                int footX = static_cast<int>(std::floor(player_.position.x));
+                int footY = static_cast<int>(std::floor(player_.position.y)) - 1;
+                int footZ = static_cast<int>(std::floor(player_.position.z));
+                BlockId footBlock = world_.getBlock(footX, footY, footZ);
+                if (footBlock != Block::Air) {
+                    SoundMaterial mat = BlockSoundMap::instance().getMaterial(footBlock);
+                    getSoundEngine().playStep(mat, player_.position);
+                }
+            }
+        }
+    } else {
+        stepSoundDistance_ = 0.0f;
     }
     entityManager_.tick(world_, player_, inventory_);
 
@@ -977,6 +1054,11 @@ void Game::handleRightClick() {
             world_.setBlock(px, py, pz, itemProps.blockId);
             inventory_.consumeHeldItem(1);
             player_.startSwing();  // 放置方块时触发挥动动画
+
+            // 播放方块放置音效
+            SoundMaterial mat = BlockSoundMap::instance().getMaterial(itemProps.blockId);
+            glm::vec3 blockCenter(px + 0.5f, py + 0.5f, pz + 0.5f);
+            getSoundEngine().playBlockPlace(mat, blockCenter);
         }
     }
 }

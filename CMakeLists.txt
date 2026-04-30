@@ -128,10 +128,20 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
 find_package(Threads REQUIRED)
 target_link_libraries(${PROJECT_NAME} PRIVATE Threads::Threads)
 
+# macOS: miniaudio 需要 CoreAudio / AudioToolbox 框架
+if(APPLE)
+    target_link_libraries(${PROJECT_NAME} PRIVATE
+        "-framework CoreAudio"
+        "-framework AudioToolbox"
+        "-framework CoreFoundation"
+    )
+endif()
+
 add_dependencies(${PROJECT_NAME} shaders)
 
 # Pass shader directory to code
 target_compile_definitions(${PROJECT_NAME} PRIVATE
     SHADER_DIR="${SHADER_OUTPUT_DIR}"
     ASSET_DIR="${CMAKE_SOURCE_DIR}/assets"
+    SOUND_DIR="${CMAKE_SOURCE_DIR}/assets/sounds"
 )

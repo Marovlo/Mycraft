@@ -8,6 +8,8 @@
 #include "game.h"
 #include "core/debug.h"
 #include "entity/mob_entity.h"
+#include "audio/sound_engine.h"
+#include "audio/block_sound_map.h"
 #include <cmath>
 #include <algorithm>
 
@@ -25,6 +27,13 @@ void Game::tickFallDamage() {
             int dmg = static_cast<int>(fallDist - 3.0f);
             player_.takeDamage(dmg);
             VLOG(DebugCat::Physics, "fall damage: dist=%.1f dmg=%d hp=%d", fallDist, dmg, player_.hp);
+
+            // MC 原版：摔落伤害音效（大摔 > 4 格，小摔 > 3 格）
+            if (fallDist > 4.0f) {
+                getSoundEngine().play(SoundEventId::DamageFallBig, player_.position);
+            } else {
+                getSoundEngine().play(SoundEventId::DamageFallSmall, player_.position);
+            }
         }
         player_.wasFalling = false;
     }
@@ -81,8 +90,9 @@ void Game::tickEating() {
 
     ++player_.eatingTicks;
 
-    // MC 原版：吃东西时每 4 tick 生成食物碎片粒子
+    // MC 原版：吃东西时每 4 tick 播放咀嚼音效 + 生成食物碎片粒子
     if (player_.eatingTicks % 4 == 0) {
+        getSoundEngine().play2D(SoundEventId::PlayerEat, 0.5f);
         const ItemStack& held = inventory_.getHeldItem();
         if (!held.isEmpty()) {
             const auto& fp = ItemRegistry::instance().get(held.id);
@@ -108,6 +118,9 @@ void Game::tickEating() {
                 inventory_.consumeHeldItem(1);
                 VLOG(DebugCat::Input, "ate %s hunger=%d sat=%.1f",
                      fp.displayName.c_str(), player_.hunger, player_.saturation);
+
+                // MC 原版：吃完食物播放打嗝音效
+                getSoundEngine().play2D(SoundEventId::PlayerBurp, 0.5f);
             }
         }
         player_.eatingTicks = 0;
@@ -204,6 +217,9 @@ void Game::tickPlayerAttack() {
 
         closestMob->takeDamage(static_cast<int>(baseDmg), kb);
         player_.attackCooldownTicks = player_.attackCooldownMax;
+
+        // 播放攻击命中音效
+        getSoundEngine().play(SoundEventId::SuccessfulHit, closestMob->position, 0.5f);
 
         // 触发挥动动画
         player_.startSwing();

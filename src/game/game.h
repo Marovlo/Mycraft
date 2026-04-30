@@ -40,6 +40,9 @@
 #include "entity/mob_spawner.h"
 #include "ui/game_console.h"
 #include "ui/main_menu_screen.h"
+#include "audio/sound_engine.h"
+#include "audio/block_sound_map.h"
+#include "audio/music_manager.h"
 
 #include <memory>
 #include <functional>
@@ -213,4 +216,12 @@ private:
     int  fps_     = 0;       // 当前显示的 FPS 值
     int  fpsFrameCount_ = 0; // 当前秒内的帧计数
     double fpsTimer_ = 0.0;  // 累计时间（秒）
+
+    // ===== 音效系统 =====
+    MusicManager musicManager_;
+
+    // 行走音效计时器（MC 原版：每走一定距离播放一次脚步声）
+    float stepSoundDistance_ = 0.0f;
+    // 挖掘音效计时器（MC 原版：挖掘过程中每 4 tick 播放一次挖掘音效）
+    int   digSoundTimer_ = 0;
 };
