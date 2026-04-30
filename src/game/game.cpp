@@ -26,6 +26,17 @@ Game::~Game() {
     musicManager_.shutdown();
     getSoundEngine().shutdown();
 
+    // 关闭网络连接
+    if (integratedServer_) {
+        integratedServer_->stop();
+        integratedServer_.reset();
+    }
+    if (clientConnection_) {
+        clientConnection_->disconnect();
+        clientConnection_.reset();
+    }
+    NetworkManager::deinitENet();
+
     // Save all data before cleanup
     if (worldLoaded_) {
         saveAll();
@@ -50,6 +61,7 @@ Game::~Game() {
     particleSystem_.destroy();
     mobRenderer_.destroy();
     playerRenderer_.destroy();
+    remotePlayerRenderer_.destroy();
     uiRenderer_.destroy();
     guiAtlas_.destroy(engine_);
     textureAtlas_.destroy(engine_);
@@ -189,6 +201,15 @@ void Game::init() {
         }
     }
 
+    // 初始化第三人称远程玩家渲染器
+    remotePlayerRenderer_.init(&engine_);
+    {
+        std::string skinPath = std::string(ASSET_DIR) + "/minecraft_vanilla/textures/entity/player/wide/steve.png";
+        if (!remotePlayerRenderer_.loadSkinTexture(engine_, skinPath)) {
+            std::cerr << "Warning: failed to load remote player skin from " << skinPath << "\n";
+        }
+    }
+
     hud_.init(&uiRenderer_, &blockModel_, &textureAtlas_, &engine_);
     inventoryScreen_.init(&uiRenderer_, &blockModel_, &textureAtlas_, &engine_);
     craftingScreen_.init(&uiRenderer_, &blockModel_, &textureAtlas_, &engine_);
@@ -201,6 +222,7 @@ void Game::init() {
     mainMenuScreen_.init(&uiRenderer_, &textureAtlas_);
     worldSelectScreen_.init(&uiRenderer_, &textureAtlas_);
     createWorldScreen_.init(&uiRenderer_, &textureAtlas_);
+    serverConnectScreen_.init(&uiRenderer_, &textureAtlas_);
 
     // 初始化游戏内控制台
     console_.init(&uiRenderer_);
@@ -222,6 +244,9 @@ void Game::init() {
         // 当前无版权音乐文件，MusicManager 会自动检测并跳过播放
     }
 
+    // 初始化 ENet 网络库
+    NetworkManager::initENet();
+
     // 设置引擎回调
     engine_.onUpdate = [this](float dt) { update(dt); };
     engine_.onRender = [this](VkCommandBuffer cmd, uint32_t) { render(cmd); };
@@ -239,6 +264,35 @@ void Game::enterWorld(const std::string& worldName, int64_t seed) {
     std::cout << "[Game] Entering world: " << worldName << " (seed=" << seed << ")\n";
 
     worldSeed_ = seed;
+    isMultiplayer_ = false;
+
+    // === 启动 IntegratedServer（MC 原版架构） ===
+    integratedServer_ = std::make_unique<IntegratedServer>();
+    std::string worldPath = savesBasePath_ + "/" + worldName;
+    if (!integratedServer_->startAndConnect(worldPath, seed, "Player")) {
+        std::cerr << "[Game] Failed to start integrated server\n";
+        integratedServer_.reset();
+        return;
+    }
+
+    // 获取客户端连接引用
+    auto& conn = integratedServer_->getConnection();
+
+    // 设置方块变更回调：服务器发来的方块变更应用到本地 World
+    conn.setOnBlockChange([this](int x, int y, int z, uint8_t blockId) {
+        world_.setBlock(x, y, z, blockId);
+    });
+
+    // 设置聊天回调
+    conn.setOnChat([](const std::string& sender, const std::string& msg) {
+        std::cout << "[Chat] <" << sender << "> " << msg << std::endl;
+    });
+
+    // 设置断开回调
+    conn.setOnDisconnect([this](const std::string& reason) {
+        std::cout << "[Game] Disconnected: " << reason << std::endl;
+        // 将在下一帧处理返回菜单
+    });
 
     // 设置存档目录
     saveManager_.setWorld(worldName, savesBasePath_);
@@ -340,6 +394,7 @@ void Game::enterWorld(const std::string& worldName, int64_t seed) {
     // 重置行走音效计时器
     stepSoundDistance_ = 0.0f;
     digSoundTimer_ = 0;
+    positionSendTimer_ = 0;
 
     // 切换到游戏状态
     gameState_ = GameState::Playing;
@@ -364,11 +419,24 @@ void Game::leaveWorld() {
         closeActiveScreen();
     }
 
-    // 保存所有数据
-    saveAll();
+    // 保存所有数据（仅单人模式）
+    if (!isMultiplayer_) {
+        saveAll();
+    }
 
     // 停止多线程任务
     chunkTaskMgr_.shutdown();
+
+    // 关闭网络连接
+    if (integratedServer_) {
+        integratedServer_->stop();
+        integratedServer_.reset();
+    }
+    if (clientConnection_) {
+        clientConnection_->disconnect();
+        clientConnection_.reset();
+    }
+    isMultiplayer_ = false;
 
     // 清理世界数据
     for (auto& [key, chunk] : world_.chunks()) {
@@ -422,6 +490,152 @@ void Game::leaveWorld() {
     worldSelectScreen_.refreshWorldList(savesBasePath_);
 
     std::cout << "[Game] Returned to world select.\n";
+}
+
+// ============================================================
+// 多人模式：连接远程服务器
+// ============================================================
+
+void Game::connectToServer(const std::string& host, uint16_t port, const std::string& playerName) {
+    std::cout << "[Game] Connecting to " << host << ":" << port << " as '" << playerName << "'\n";
+
+    isMultiplayer_ = true;
+    connectStatus_ = "Connecting...";
+
+    clientConnection_ = std::make_unique<ClientConnection>();
+
+    // 设置回调
+    clientConnection_->setOnBlockChange([this](int x, int y, int z, uint8_t blockId) {
+        world_.setBlock(x, y, z, blockId);
+    });
+    clientConnection_->setOnChat([](const std::string& sender, const std::string& msg) {
+        std::cout << "[Chat] <" << sender << "> " << msg << std::endl;
+    });
+    clientConnection_->setOnDisconnect([this](const std::string& reason) {
+        std::cout << "[Game] Disconnected: " << reason << std::endl;
+        connectStatus_ = "Disconnected: " + reason;
+    });
+
+    if (!clientConnection_->connect(host, port, playerName)) {
+        std::cerr << "[Game] Failed to connect to server\n";
+        connectStatus_ = "Connection failed";
+        clientConnection_.reset();
+        isMultiplayer_ = false;
+        gameState_ = GameState::ServerConnect;
+        return;
+    }
+
+    // 连接成功，初始化客户端世界
+    worldSeed_ = clientConnection_->getWorldSeed();
+    terrainGen_ = std::make_unique<OverworldGenerator>(static_cast<int>(worldSeed_));
+
+    // 初始化多线程区块任务管理器（多人模式不需要 SaveManager）
+    chunkTaskMgr_.init(0, terrainGen_.get(), nullptr, &textureAtlas_);
+
+    blockUpdateSystem_.init();
+
+    // 设置方块变更回调
+    world_.setBlockChangeCallback([this](int x, int y, int z, BlockId oldId, BlockId newId) {
+        blockUpdateSystem_.notifyNeighbors(world_, x, y, z, tickClock_.getTotalTicks());
+    });
+
+    // 默认出生点
+    player_.position = glm::vec3(0.5f, 80.0f, 0.5f);
+    player_.spawnPoint = player_.position;
+    prevPlayerPos_ = player_.position;
+
+    stepSoundDistance_ = 0.0f;
+    digSoundTimer_ = 0;
+    positionSendTimer_ = 0;
+
+    gameState_ = GameState::Playing;
+    worldLoaded_ = true;
+    input_.setCursorLocked(true);
+    input_.enableTextInput(false);
+
+    tickClock_.reset(glfwGetTime());
+    lastAutoSaveTick_ = tickClock_.getTotalTicks();
+
+    std::cout << "[Game] Connected to server, entering world.\n";
+}
+
+void Game::disconnectFromServer() {
+    if (clientConnection_) {
+        clientConnection_->disconnect();
+        clientConnection_.reset();
+    }
+    isMultiplayer_ = false;
+    leaveWorld();
+}
+
+// ============================================================
+// 网络同步
+// ============================================================
+
+void Game::processNetworkSync() {
+    // 更新网络连接
+    ClientConnection* conn = nullptr;
+    if (integratedServer_) {
+        conn = &integratedServer_->getConnection();
+    } else if (clientConnection_) {
+        conn = clientConnection_.get();
+    }
+
+    if (!conn) return;
+
+    conn->update();
+
+    // 检查连接状态
+    if (!conn->isConnected()) {
+        std::cout << "[Game] Lost connection to server\n";
+        leaveWorld();
+        return;
+    }
+
+    // 应用接收到的区块数据
+    applyReceivedChunks();
+
+    // 发送玩家位置
+    positionSendTimer_++;
+    if (positionSendTimer_ >= POSITION_SEND_INTERVAL) {
+        positionSendTimer_ = 0;
+        conn->sendPosition(player_.position, player_.yaw, player_.pitch, player_.onGround);
+    }
+}
+
+void Game::applyReceivedChunks() {
+    ClientConnection* conn = nullptr;
+    if (integratedServer_) {
+        conn = &integratedServer_->getConnection();
+    } else if (clientConnection_) {
+        conn = clientConnection_.get();
+    }
+    if (!conn) return;
+
+    auto chunks = conn->drainChunkData();
+    for (auto& chunkData : chunks) {
+        auto& chunk = world_.getOrCreateChunk(chunkData.cx, chunkData.cz);
+
+        // 将接收到的方块数据写入区块
+        size_t expectedSize = Chunk::blockCount() * sizeof(BlockId);
+        if (chunkData.blocks.size() >= expectedSize) {
+            std::memcpy(chunk.blocksData(), chunkData.blocks.data(), expectedSize);
+            chunk.markHasData();
+            chunk.setState(ChunkState::MeshPending);
+            chunk.markMeshDirty();
+
+            // 标记邻居 mesh dirty
+            world_.markChunkDirty(chunkData.cx - 1, chunkData.cz);
+            world_.markChunkDirty(chunkData.cx + 1, chunkData.cz);
+            world_.markChunkDirty(chunkData.cx, chunkData.cz - 1);
+            world_.markChunkDirty(chunkData.cx, chunkData.cz + 1);
+        }
+    }
+}
+
+void Game::renderRemotePlayers(VkCommandBuffer cmd) {
+    // 远程玩家渲染已移至 render() 中通过 remotePlayerRenderer_ 实现
+    (void)cmd;
 }
 
 void Game::deleteWorld(const std::string& worldName) {
@@ -569,6 +783,9 @@ void Game::update(float dt) {
         gameTick();
     }
 
+    // 网络同步（每帧轮询）
+    processNetworkSync();
+
     input_.update();
     input_.postUpdate();
 
@@ -598,13 +815,30 @@ void Game::update(float dt) {
 
     UniformBufferObject ubo{};
     ubo.model = glm::mat4(1.0f);
-    ubo.view  = glm::lookAt(renderEye, renderEye + player_.getForward(), glm::vec3(0, 1, 0));
+
+    // === F5 视角切换：调整相机位置 ===
+    glm::vec3 cameraEye = renderEye;
+    glm::vec3 cameraTarget = renderEye + player_.getForward();
+
+    if (cameraMode_ == CameraMode::ThirdPersonBack) {
+        // 第三人称背面：相机在玩家身后
+        glm::vec3 backward = -player_.getForward();
+        cameraEye = renderEye + backward * THIRD_PERSON_DISTANCE;
+        cameraTarget = renderEye;  // 看向玩家
+    } else if (cameraMode_ == CameraMode::ThirdPersonFront) {
+        // 第三人称正面（第二人称）：相机在玩家前方，面向玩家
+        glm::vec3 forward = player_.getForward();
+        cameraEye = renderEye + forward * THIRD_PERSON_DISTANCE;
+        cameraTarget = renderEye;  // 看向玩家
+    }
+
+    ubo.view  = glm::lookAt(cameraEye, cameraTarget, glm::vec3(0, 1, 0));
     ubo.proj  = player_.getProjectionMatrix(aspect);
     // 昼夜循环天空颜色
     glm::vec3 skyCol = dayNightCycle_.getSkyColor();
     glm::vec3 fogCol = dayNightCycle_.getFogColor();
     ubo.fogColor = glm::vec4(fogCol, 1.0f);
-    ubo.viewPos  = glm::vec4(renderEye, 1.0f);
+    ubo.viewPos  = glm::vec4(cameraEye, 1.0f);
     float fogStart = static_cast<float>((RENDER_DISTANCE - 2) * CHUNK_SIZE);
     float fogEnd   = static_cast<float>(RENDER_DISTANCE * CHUNK_SIZE);
     ubo.fogRange = glm::vec2(fogStart, fogEnd);
@@ -699,6 +933,44 @@ void Game::update(float dt) {
     entityRenderer_.buildFrame(entityManager_, partial);
     mobRenderer_.buildFrame(entityManager_, partial, &dayNightCycle_);
     playerRenderer_.buildFrame(player_, inventory_, partial, &dayNightCycle_);
+
+    // 构建远程玩家第三人称模型 mesh + 本地玩家第三人称模型（F5 视角）
+    {
+        ClientConnection* conn = nullptr;
+        if (integratedServer_) {
+            conn = &integratedServer_->getConnection();
+        } else if (clientConnection_) {
+            conn = clientConnection_.get();
+        }
+
+        bool hasRemotePlayers = conn && !conn->getRemotePlayers().empty();
+        bool needLocalThirdPerson = (cameraMode_ != CameraMode::FirstPerson);
+
+        if (hasRemotePlayers || needLocalThirdPerson) {
+            float skyLight = dayNightCycle_.getSkyLightFactor();
+
+            // 先构建远程玩家
+            if (hasRemotePlayers) {
+                remotePlayerRenderer_.buildFrame(
+                    conn->getRemotePlayers(), player_.position, partial, &dayNightCycle_);
+            } else {
+                // 没有远程玩家时也需要初始化帧（清空上一帧数据）
+                std::unordered_map<uint32_t, RemotePlayer> empty;
+                remotePlayerRenderer_.buildFrame(empty, player_.position, partial, &dayNightCycle_);
+            }
+
+            // 第三人称模式：追加本地玩家模型
+            if (needLocalThirdPerson && remotePlayerRenderer_.hasSkinTexture()) {
+                remotePlayerRenderer_.appendLocalPlayer(
+                    player_.position, prevPlayerPos_,
+                    player_.yaw, player_.pitch, player_.sneaking,
+                    player_.swinging, player_.swingTicks,
+                    player_.isChargingBow, player_.bowChargeTicks,
+                    player_.isEating, player_.eatingTicks,
+                    partial, skyLight);
+            }
+        }
+    }
 
     // 粒子系统：更新物理 + 构建渲染 mesh
     {
@@ -927,8 +1199,12 @@ void Game::handleGameplayInput() {
         if (input_.isCursorLocked()) {
             input_.setCursorLocked(false);
         } else {
-            // 返回主菜单（保存并离开世界）
-            leaveWorld();
+    // 返回主菜单（保存并离开世界）
+            if (isMultiplayer_) {
+                disconnectFromServer();
+            } else {
+                leaveWorld();
+            }
             return;
         }
     }
@@ -1001,6 +1277,7 @@ void Game::handleGameplayInput() {
     // MC 原版行为：左键点击时无论是否命中都触发挥动动画（空挥也有动画）
     if (input_.isCursorLocked() && input_.isMouseButtonPressed(GLFW_MOUSE_BUTTON_LEFT)) {
         player_.startSwing();
+        sendNetworkAction(PlayerActionType::SwingArm);
     }
 
     // Q: drop
@@ -1096,6 +1373,7 @@ void Game::handleRightClick() {
         if (hasArrow) {
             player_.isChargingBow = true;
             player_.bowChargeTicks = 0;
+            sendNetworkAction(PlayerActionType::BowDraw);
         }
         return;
     }
@@ -1103,6 +1381,7 @@ void Game::handleRightClick() {
     if (itemProps.type == ItemType::Food && player_.hunger < player_.maxHunger) {
         player_.isEating = true;
         player_.eatingTicks = 0;
+        sendNetworkAction(PlayerActionType::EatStart);
     } else if (itemProps.type == ItemType::Block && itemProps.blockId > 0 && hit.hit) {
         int px = hit.prevX, py = hit.prevY, pz = hit.prevZ;
         bool cellEmpty = world_.getBlock(px, py, pz) == Block::Air;
@@ -1123,6 +1402,7 @@ void Game::handleRightClick() {
 void Game::releaseBow() {
     // MC 原版：松开右键时射出箭矢
     player_.isChargingBow = false;
+    sendNetworkAction(PlayerActionType::BowRelease);
 
     if (!player_.canReleaseBow()) {
         // 蓄力不足 3 tick，不射箭
@@ -1170,6 +1450,18 @@ void Game::releaseBow() {
     }
 
     player_.bowChargeTicks = 0;
+}
+
+void Game::sendNetworkAction(PlayerActionType action) {
+    ClientConnection* conn = nullptr;
+    if (integratedServer_) {
+        conn = &integratedServer_->getConnection();
+    } else if (clientConnection_) {
+        conn = clientConnection_.get();
+    }
+    if (conn && conn->isConnected()) {
+        conn->sendPlayerAction(action);
+    }
 }
 
 void Game::handleTickInput() {
@@ -1556,9 +1848,18 @@ void Game::render(VkCommandBuffer cmd) {
             engine_.getPipelineLayout(), 0, 1, &frame.descriptorSet, 0, nullptr);
     }
 
-    // 第一人称 viewmodel（手臂 + 手持物品）— 在所有世界几何体之后渲染
+    // 远程玩家第三人称模型渲染
+    if (remotePlayerRenderer_.hasContent()) {
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, engine_.getPipeline());
+        remotePlayerRenderer_.render(cmd, engine_.getPipelineLayout());
+        // 恢复方块纹理的 descriptor set
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+            engine_.getPipelineLayout(), 0, 1, &frame.descriptorSet, 0, nullptr);
+    }
+
+    // 第一人称 viewmodel（手臂 + 手持物品）— 仅在第一人称模式下渲染
     // 使用 viewmodel 专用管线（depthCompareOp = ALWAYS），确保手臂永远不被世界遮挡
-    if (playerRenderer_.hasContent()) {
+    if (cameraMode_ == CameraMode::FirstPerson && playerRenderer_.hasContent()) {
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, engine_.getViewmodelPipeline());
         playerRenderer_.render(cmd, engine_.getPipelineLayout(), frame.descriptorSet);
         // 恢复方块纹理的 descriptor set
@@ -1585,6 +1886,11 @@ void Game::updateMenu(float dt) {
                 case MainMenuScreen::Action::SinglePlayer:
                     gameState_ = GameState::WorldSelect;
                     worldSelectScreen_.refreshWorldList(savesBasePath_);
+                    break;
+                case MainMenuScreen::Action::Multiplayer:
+                    gameState_ = GameState::ServerConnect;
+                    serverConnectScreen_.open();
+                    input_.enableTextInput(true);
                     break;
                 case MainMenuScreen::Action::Quit:
                     glfwSetWindowShouldClose(engine_.getWindow(), GLFW_TRUE);
@@ -1644,6 +1950,30 @@ void Game::updateMenu(float dt) {
             break;
         }
 
+        case GameState::ServerConnect: {
+            auto result = serverConnectScreen_.update(input_, sw, sh);
+            switch (result.action) {
+                case ServerConnectScreen::Action::Connect:
+                    input_.enableTextInput(false);
+                    connectToServer(result.host, result.port, result.playerName);
+                    break;
+                case ServerConnectScreen::Action::Cancel:
+                    input_.enableTextInput(false);
+                    gameState_ = GameState::MainMenu;
+                    break;
+                default:
+                    break;
+            }
+            break;
+        }
+
+        case GameState::Connecting: {
+            // 连接中状态，等待连接完成
+            // 当前 connectToServer 是同步的，所以这个状态不会被触发
+            // 后续可以改为异步连接
+            break;
+        }
+
         default:
             break;
     }
@@ -1665,6 +1995,12 @@ void Game::renderMenu(VkCommandBuffer cmd) {
             break;
         case GameState::CreateWorld:
             createWorldScreen_.draw(sw, sh);
+            break;
+        case GameState::ServerConnect:
+            serverConnectScreen_.draw(sw, sh);
+            break;
+        case GameState::Connecting:
+            serverConnectScreen_.drawConnecting(sw, sh, connectStatus_);
             break;
         default:
             break;

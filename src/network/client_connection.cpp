@@ -48,6 +48,30 @@ void ClientConnection::update() {
 
     network_.pollEvents(0);
     processPackets();
+
+    // 更新远程玩家动画 tick
+    for (auto& [id, rp] : remotePlayers_) {
+        // 挥臂动画递增
+        if (rp.isSwingArm) {
+            rp.swingTicks++;
+            if (rp.swingTicks >= RemotePlayer::SWING_DURATION) {
+                rp.isSwingArm = false;
+                rp.swingTicks = 0;
+            }
+        }
+        // 拉弓蓄力递增
+        if (rp.isChargingBow) {
+            rp.bowChargeTicks++;
+        }
+        // 吃东西递增
+        if (rp.isEating) {
+            rp.eatingTicks++;
+            if (rp.eatingTicks >= 32) {
+                rp.isEating = false;
+                rp.eatingTicks = 0;
+            }
+        }
+    }
 }
 
 // === 发送操作 ===
@@ -283,9 +307,47 @@ void ClientConnection::handlePlayerAction(PacketBuffer& buf) {
     uint32_t playerId = buf.readU32();
     auto actionType = static_cast<PlayerActionType>(buf.readU8());
 
-    // TODO: 触发远程玩家动画
-    (void)playerId;
-    (void)actionType;
+    auto it = remotePlayers_.find(playerId);
+    if (it == remotePlayers_.end()) return;
+
+    RemotePlayer& rp = it->second;
+
+    switch (actionType) {
+        case PlayerActionType::SwingArm:
+            rp.isSwingArm = true;
+            rp.swingTicks = 0;
+            break;
+        case PlayerActionType::BowDraw:
+            rp.isChargingBow = true;
+            rp.bowChargeTicks = 0;
+            break;
+        case PlayerActionType::BowRelease:
+            rp.isChargingBow = false;
+            rp.bowChargeTicks = 0;
+            break;
+        case PlayerActionType::EatStart:
+            rp.isEating = true;
+            rp.eatingTicks = 0;
+            break;
+        case PlayerActionType::EatFinish:
+            rp.isEating = false;
+            rp.eatingTicks = 0;
+            break;
+        case PlayerActionType::StartSneaking:
+            rp.isSneaking = true;
+            break;
+        case PlayerActionType::StopSneaking:
+            rp.isSneaking = false;
+            break;
+        case PlayerActionType::StartSprinting:
+            rp.isSprinting = true;
+            break;
+        case PlayerActionType::StopSprinting:
+            rp.isSprinting = false;
+            break;
+        default:
+            break;
+    }
 }
 
 void ClientConnection::handleEntitySpawn(PacketBuffer& buf) {

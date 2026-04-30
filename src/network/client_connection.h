@@ -26,6 +26,20 @@ struct RemotePlayer {
     float pitch = 0.0f;
     bool onGround = true;
     double lastUpdateTime = 0.0;
+
+    // === 动作状态（用于第三人称动画渲染） ===
+    bool isSwingArm = false;       // 挥臂动画（攻击/挖掘）
+    int  swingTicks = 0;           // 挥臂动画进度
+    static constexpr int SWING_DURATION = 6;  // 挥臂动画持续 tick 数
+
+    bool isChargingBow = false;    // 正在拉弓
+    int  bowChargeTicks = 0;       // 拉弓蓄力 tick 数
+
+    bool isEating = false;         // 正在吃东西
+    int  eatingTicks = 0;          // 吃东西进度
+
+    bool isSneaking = false;       // 潜行
+    bool isSprinting = false;      // 冲刺
 };
 
 // 区块数据（从服务器接收）

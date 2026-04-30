@@ -46,8 +46,26 @@ void Game::handleDebugKeys() {
         std::cout << "=== END ===\n\n";
     }
 
-    // F5: Teleport to surface
+    // F5: MC 原版视角切换（第一人称 → 第三人称背面 → 第三人称正面）
     if (input_.isKeyPressed(GLFW_KEY_F5)) {
+        switch (cameraMode_) {
+            case CameraMode::FirstPerson:
+                cameraMode_ = CameraMode::ThirdPersonBack;
+                std::cout << "[Camera] Third Person (Back)\n";
+                break;
+            case CameraMode::ThirdPersonBack:
+                cameraMode_ = CameraMode::ThirdPersonFront;
+                std::cout << "[Camera] Third Person (Front)\n";
+                break;
+            case CameraMode::ThirdPersonFront:
+                cameraMode_ = CameraMode::FirstPerson;
+                std::cout << "[Camera] First Person\n";
+                break;
+        }
+    }
+
+    // F8: Teleport to surface（原 F5 功能）
+    if (input_.isKeyPressed(GLFW_KEY_F8)) {
         auto* gen = dynamic_cast<OverworldGenerator*>(terrainGen_.get());
         int px = static_cast<int>(std::floor(player_.position.x));
         int pz = static_cast<int>(std::floor(player_.position.z));

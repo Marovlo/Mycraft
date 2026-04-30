@@ -27,11 +27,12 @@ void MainMenuScreen::layoutButtons(float screenW, float screenH) {
     float btnW = 200.0f;
     float btnH = 30.0f;
     float gap = 10.0f;
-    float startY = screenH * 0.55f;
+    float startY = screenH * 0.50f;
     float centerX = screenW * 0.5f - btnW * 0.5f;
 
     buttons_.push_back({"SINGLEPLAYER", centerX, startY, btnW, btnH});
-    buttons_.push_back({"QUIT GAME", centerX, startY + btnH + gap, btnW, btnH});
+    buttons_.push_back({"MULTIPLAYER", centerX, startY + (btnH + gap), btnW, btnH});
+    buttons_.push_back({"QUIT GAME", centerX, startY + (btnH + gap) * 2, btnW, btnH});
 }
 
 MainMenuScreen::Action MainMenuScreen::update(InputManager& input, float screenW, float screenH) {
@@ -55,7 +56,8 @@ MainMenuScreen::Action MainMenuScreen::update(InputManager& input, float screenW
         getSoundEngine().play2D(SoundEventId::UIButtonClick, 0.5f);
         switch (hoveredButton_) {
             case 0: return Action::SinglePlayer;
-            case 1: return Action::Quit;
+            case 1: return Action::Multiplayer;
+            case 2: return Action::Quit;
         }
     }
 
@@ -98,6 +100,245 @@ void MainMenuScreen::draw(float screenW, float screenH) {
     // 版本信息
     ui_->drawTextLeft("MYCRAFT V0.6", 5.0f, screenH - 18.0f, 10.0f,
                       glm::vec4(0.5f, 0.5f, 0.5f, 1.0f));
+}
+
+// ============================================================
+// ServerConnectScreen
+// ============================================================
+
+void ServerConnectScreen::init(UIRenderer* ui, TextureAtlas* atlas) {
+    ui_ = ui;
+    atlas_ = atlas;
+}
+
+void ServerConnectScreen::open() {
+    addressInput_ = "localhost";
+    nameInput_ = "Player";
+    activeField_ = 0;
+    hoveredButton_ = -1;
+    cursorBlinkTime_ = 0.0;
+    cursorVisible_ = true;
+}
+
+void ServerConnectScreen::parseAddress(const std::string& addr, std::string& host, uint16_t& port) {
+    port = 25565;  // 默认端口
+    size_t colonPos = addr.rfind(':');
+    if (colonPos != std::string::npos && colonPos > 0) {
+        host = addr.substr(0, colonPos);
+        try {
+            int p = std::stoi(addr.substr(colonPos + 1));
+            if (p > 0 && p <= 65535) port = static_cast<uint16_t>(p);
+        } catch (...) {
+            // 解析失败，使用默认端口
+        }
+    } else {
+        host = addr;
+    }
+}
+
+ServerConnectScreen::Result ServerConnectScreen::update(InputManager& input, float screenW, float screenH) {
+    double mx = input.getMouseX();
+    double my = input.getMouseY();
+
+    // 光标闪烁
+    cursorBlinkTime_ += 1.0 / 60.0;
+    if (cursorBlinkTime_ > 0.5) {
+        cursorBlinkTime_ = 0.0;
+        cursorVisible_ = !cursorVisible_;
+    }
+
+    // 输入框点击切换焦点
+    float fieldW = 300.0f;
+    float fieldH = 28.0f;
+    float centerX = (screenW - fieldW) * 0.5f;
+    float addrFieldY = screenH * 0.35f;
+    float nameFieldY = addrFieldY + 60.0f;
+
+    if (input.isMouseButtonPressed(GLFW_MOUSE_BUTTON_LEFT)) {
+        if (mx >= centerX && mx <= centerX + fieldW) {
+            if (my >= addrFieldY && my <= addrFieldY + fieldH) {
+                activeField_ = 0;
+                cursorBlinkTime_ = 0.0;
+                cursorVisible_ = true;
+            } else if (my >= nameFieldY && my <= nameFieldY + fieldH) {
+                activeField_ = 1;
+                cursorBlinkTime_ = 0.0;
+                cursorVisible_ = true;
+            }
+        }
+    }
+
+    // 文本输入处理
+    std::string textInput = input.consumeTextInput();
+    std::string& activeStr = (activeField_ == 0) ? addressInput_ : nameInput_;
+
+    for (char ch : textInput) {
+        if (activeField_ == 0) {
+            // 地址：允许字母、数字、点、冒号、连字符
+            if ((ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') ||
+                (ch >= '0' && ch <= '9') || ch == '.' || ch == ':' || ch == '-') {
+                if (activeStr.size() < 64) activeStr += ch;
+            }
+        } else {
+            // 玩家名称
+            if ((ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') ||
+                (ch >= '0' && ch <= '9') || ch == '_' || ch == '-') {
+                if (activeStr.size() < 16) activeStr += ch;
+            }
+        }
+    }
+
+    if (input.hasBackspace() && !activeStr.empty()) {
+        activeStr.pop_back();
+    }
+
+    // Tab 切换字段
+    if (input.isKeyPressed(GLFW_KEY_TAB)) {
+        activeField_ = (activeField_ + 1) % 2;
+        cursorBlinkTime_ = 0.0;
+        cursorVisible_ = true;
+    }
+
+    // 按钮
+    float btnW = 120.0f, btnH = 28.0f;
+    float btnY = screenH * 0.7f;
+    float connectBtnX = screenW * 0.5f - btnW - 10.0f;
+    float cancelBtnX = screenW * 0.5f + 10.0f;
+
+    hoveredButton_ = -1;
+    if (mx >= connectBtnX && mx <= connectBtnX + btnW && my >= btnY && my <= btnY + btnH) {
+        hoveredButton_ = 0;
+    } else if (mx >= cancelBtnX && mx <= cancelBtnX + btnW && my >= btnY && my <= btnY + btnH) {
+        hoveredButton_ = 1;
+    }
+
+    if (input.isMouseButtonPressed(GLFW_MOUSE_BUTTON_LEFT)) {
+        if (hoveredButton_ == 0 && !addressInput_.empty() && !nameInput_.empty()) {
+            getSoundEngine().play2D(SoundEventId::UIButtonClick, 0.5f);
+            Result r;
+            r.action = Action::Connect;
+            parseAddress(addressInput_, r.host, r.port);
+            r.playerName = nameInput_;
+            return r;
+        } else if (hoveredButton_ == 1) {
+            getSoundEngine().play2D(SoundEventId::UIButtonClick, 0.5f);
+            return {Action::Cancel, "", 0, ""};
+        }
+    }
+
+    // Enter 连接
+    if (input.isKeyPressed(GLFW_KEY_ENTER) && !addressInput_.empty() && !nameInput_.empty()) {
+        Result r;
+        r.action = Action::Connect;
+        parseAddress(addressInput_, r.host, r.port);
+        r.playerName = nameInput_;
+        return r;
+    }
+
+    // ESC 取消
+    if (input.isKeyPressed(GLFW_KEY_ESCAPE)) {
+        return {Action::Cancel, "", 0, ""};
+    }
+
+    return {Action::None, "", 0, ""};
+}
+
+void ServerConnectScreen::draw(float screenW, float screenH) {
+    // 背景
+    ui_->drawRect(0, 0, screenW, screenH, glm::vec4(0.12f, 0.12f, 0.15f, 1.0f));
+
+    // 标题
+    ui_->drawText("MULTIPLAYER", screenW * 0.5f, 30.0f, 20.0f, glm::vec4(1.0f));
+
+    float fieldW = 300.0f;
+    float fieldH = 28.0f;
+    float centerX = (screenW - fieldW) * 0.5f;
+    float addrFieldY = screenH * 0.35f;
+    float nameFieldY = addrFieldY + 60.0f;
+
+    // 服务器地址标签
+    ui_->drawText("SERVER ADDRESS", screenW * 0.5f, addrFieldY - 20.0f, 11.0f,
+                  glm::vec4(0.7f, 0.7f, 0.7f, 1.0f));
+
+    // 地址输入框
+    bool addrActive = (activeField_ == 0);
+    glm::vec4 addrBorder = addrActive ? glm::vec4(0.4f, 0.7f, 0.4f, 1.0f)
+                                      : glm::vec4(0.3f, 0.3f, 0.3f, 0.8f);
+    ui_->drawRect(centerX, addrFieldY, fieldW, fieldH, glm::vec4(0.08f, 0.08f, 0.1f, 0.9f));
+    ui_->drawRect(centerX, addrFieldY, fieldW, 1.0f, addrBorder);
+    ui_->drawRect(centerX, addrFieldY + fieldH - 1.0f, fieldW, 1.0f, addrBorder);
+    ui_->drawRect(centerX, addrFieldY, 1.0f, fieldH, addrBorder);
+    ui_->drawRect(centerX + fieldW - 1.0f, addrFieldY, 1.0f, fieldH, addrBorder);
+
+    std::string addrDisplay = addressInput_;
+    if (addrActive && cursorVisible_) addrDisplay += "_";
+    if (!addrDisplay.empty()) {
+        ui_->drawTextLeft(addrDisplay, centerX + 8.0f, addrFieldY + 8.0f, 11.0f,
+                          glm::vec4(1.0f, 1.0f, 1.0f, 1.0f));
+    }
+
+    // 玩家名称标签
+    ui_->drawText("PLAYER NAME", screenW * 0.5f, nameFieldY - 20.0f, 11.0f,
+                  glm::vec4(0.7f, 0.7f, 0.7f, 1.0f));
+
+    // 名称输入框
+    bool nameActive = (activeField_ == 1);
+    glm::vec4 nameBorder = nameActive ? glm::vec4(0.4f, 0.7f, 0.4f, 1.0f)
+                                      : glm::vec4(0.3f, 0.3f, 0.3f, 0.8f);
+    ui_->drawRect(centerX, nameFieldY, fieldW, fieldH, glm::vec4(0.08f, 0.08f, 0.1f, 0.9f));
+    ui_->drawRect(centerX, nameFieldY, fieldW, 1.0f, nameBorder);
+    ui_->drawRect(centerX, nameFieldY + fieldH - 1.0f, fieldW, 1.0f, nameBorder);
+    ui_->drawRect(centerX, nameFieldY, 1.0f, fieldH, nameBorder);
+    ui_->drawRect(centerX + fieldW - 1.0f, nameFieldY, 1.0f, fieldH, nameBorder);
+
+    std::string nameDisplay = nameInput_;
+    if (nameActive && cursorVisible_) nameDisplay += "_";
+    if (!nameDisplay.empty()) {
+        ui_->drawTextLeft(nameDisplay, centerX + 8.0f, nameFieldY + 8.0f, 11.0f,
+                          glm::vec4(1.0f, 1.0f, 1.0f, 1.0f));
+    }
+
+    // 按钮
+    float btnW = 120.0f, btnH = 28.0f;
+    float btnY = screenH * 0.7f;
+    float connectBtnX = screenW * 0.5f - btnW - 10.0f;
+    float cancelBtnX = screenW * 0.5f + 10.0f;
+
+    const char* labels[] = {"CONNECT", "CANCEL"};
+    float btnXs[] = {connectBtnX, cancelBtnX};
+
+    for (int i = 0; i < 2; i++) {
+        bool hovered = (i == hoveredButton_);
+        bool disabled = (i == 0 && (addressInput_.empty() || nameInput_.empty()));
+
+        if (disabled) {
+            ui_->drawGuiSprite("widget/button_disabled", btnXs[i], btnY, btnW, btnH);
+        } else if (hovered) {
+            ui_->drawGuiSprite("widget/button_highlighted", btnXs[i], btnY, btnW, btnH);
+        } else {
+            ui_->drawGuiSprite("widget/button", btnXs[i], btnY, btnW, btnH);
+        }
+
+        float textH = 11.0f;
+        float textY = btnY + (btnH - textH) * 0.5f;
+        glm::vec4 textColor;
+        if (disabled) {
+            textColor = glm::vec4(0.4f, 0.4f, 0.4f, 1.0f);
+        } else if (hovered) {
+            textColor = glm::vec4(1.0f, 1.0f, 0.5f, 1.0f);
+        } else {
+            textColor = glm::vec4(0.9f, 0.9f, 0.9f, 1.0f);
+        }
+        ui_->drawText(labels[i], btnXs[i] + btnW * 0.5f, textY, textH, textColor);
+    }
+}
+
+void ServerConnectScreen::drawConnecting(float screenW, float screenH, const std::string& status) {
+    ui_->drawRect(0, 0, screenW, screenH, glm::vec4(0.12f, 0.12f, 0.15f, 1.0f));
+    ui_->drawText("CONNECTING TO SERVER", screenW * 0.5f, screenH * 0.4f, 16.0f,
+                  glm::vec4(1.0f, 1.0f, 1.0f, 1.0f));
+    ui_->drawText(status, screenW * 0.5f, screenH * 0.4f + 30.0f, 11.0f,
+                  glm::vec4(0.7f, 0.7f, 0.7f, 1.0f));
 }
 
 // ============================================================

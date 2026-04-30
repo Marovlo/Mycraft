@@ -8,7 +8,8 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # --- macOS: help dlopen find libvulkan ---
 if(APPLE)
     set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
-    set(CMAKE_BUILD_RPATH "/opt/homebrew/lib")
+    # 支持 Apple Silicon (/opt/homebrew) 和 Intel Mac (/usr/local)
+    set(CMAKE_BUILD_RPATH "/opt/homebrew/lib;/usr/local/lib")
 endif()
 
 # --- Find Vulkan ---
@@ -22,6 +23,7 @@ FetchContent_Declare(
     glfw
     GIT_REPOSITORY https://github.com/glfw/glfw.git
     GIT_TAG        3.4
+    GIT_SHALLOW    ON
 )
 set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
@@ -37,6 +39,7 @@ FetchContent_Declare(
     glm
     GIT_REPOSITORY https://github.com/g-truc/glm.git
     GIT_TAG        1.0.1
+    GIT_SHALLOW    ON
 )
 FetchContent_MakeAvailable(glm)
 
@@ -45,6 +48,7 @@ FetchContent_Declare(
     vma
     GIT_REPOSITORY https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator.git
     GIT_TAG        v3.1.0
+    GIT_SHALLOW    ON
 )
 FetchContent_MakeAvailable(vma)
 
@@ -53,6 +57,7 @@ FetchContent_Declare(
     vkbootstrap
     GIT_REPOSITORY https://github.com/charles-lunarg/vk-bootstrap.git
     GIT_TAG        v1.3.296
+    GIT_SHALLOW    ON
 )
 FetchContent_MakeAvailable(vkbootstrap)
 
@@ -61,6 +66,7 @@ FetchContent_Declare(
     stb
     GIT_REPOSITORY https://github.com/nothings/stb.git
     GIT_TAG        master
+    GIT_SHALLOW    ON
 )
 FetchContent_MakeAvailable(stb)
 
@@ -69,6 +75,7 @@ FetchContent_Declare(
     fastnoiselite
     GIT_REPOSITORY https://github.com/Auburn/FastNoiseLite.git
     GIT_TAG        v1.1.1
+    GIT_SHALLOW    ON
 )
 FetchContent_MakeAvailable(fastnoiselite)
 
@@ -77,6 +84,7 @@ FetchContent_Declare(
     enet
     GIT_REPOSITORY https://github.com/lsalzman/enet.git
     GIT_TAG        v1.3.18
+    GIT_SHALLOW    ON
 )
 FetchContent_MakeAvailable(enet)
 
@@ -110,20 +118,28 @@ endforeach()
 
 add_custom_target(shaders ALL DEPENDS ${SHADER_SPIRV_FILES})
 
-# --- Main executable ---
-file(GLOB_RECURSE SOURCES
-    "src/*.cpp"
-    "src/*.h"
-)
-
-add_executable(${PROJECT_NAME} ${SOURCES})
-
-target_include_directories(${PROJECT_NAME} PRIVATE
+# --- Common include directories ---
+set(COMMON_INCLUDES
     ${CMAKE_SOURCE_DIR}/src
     ${stb_SOURCE_DIR}
     ${fastnoiselite_SOURCE_DIR}/Cpp
     ${enet_SOURCE_DIR}/include
 )
+
+# macOS 和 Linux 都需要 pthread
+find_package(Threads REQUIRED)
+
+# --- Main client executable ---
+file(GLOB_RECURSE CLIENT_SOURCES
+    "src/*.cpp"
+    "src/*.h"
+)
+# 排除专用服务器入口文件（避免多个 main 函数冲突）
+list(FILTER CLIENT_SOURCES EXCLUDE REGEX "src/server/dedicated_server\\.cpp")
+
+add_executable(${PROJECT_NAME} ${CLIENT_SOURCES})
+
+target_include_directories(${PROJECT_NAME} PRIVATE ${COMMON_INCLUDES})
 
 target_link_libraries(${PROJECT_NAME} PRIVATE
     Vulkan::Vulkan
@@ -132,11 +148,8 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     GPUOpen::VulkanMemoryAllocator
     vk-bootstrap::vk-bootstrap
     enet
+    Threads::Threads
 )
-
-# macOS 和 Linux 都需要 pthread
-find_package(Threads REQUIRED)
-target_link_libraries(${PROJECT_NAME} PRIVATE Threads::Threads)
 
 # macOS: miniaudio 需要 CoreAudio / AudioToolbox 框架
 if(APPLE)
@@ -149,8 +162,48 @@ endif()
 
 add_dependencies(${PROJECT_NAME} shaders)
 
-# Pass shader directory to code
 target_compile_definitions(${PROJECT_NAME} PRIVATE
+    SHADER_DIR="${SHADER_OUTPUT_DIR}"
+    ASSET_DIR="${CMAKE_SOURCE_DIR}/assets"
+    SOUND_DIR="${CMAKE_SOURCE_DIR}/assets/sounds"
+)
+
+# --- Dedicated Server executable (headless, no rendering) ---
+# 使用所有源文件，但排除客户端 main.cpp（使用自己的入口）
+file(GLOB_RECURSE SERVER_ALL_SOURCES
+    "src/*.cpp"
+    "src/*.h"
+)
+# 排除客户端入口
+list(FILTER SERVER_ALL_SOURCES EXCLUDE REGEX "src/main\\.cpp")
+
+add_executable(MycraftServer ${SERVER_ALL_SOURCES})
+
+target_include_directories(MycraftServer PRIVATE ${COMMON_INCLUDES})
+
+# Headless server 仍需要 Vulkan/GLFW/VMA 等头文件（共享代码间接依赖）
+# 但不使用渲染功能
+target_link_libraries(MycraftServer PRIVATE
+    Vulkan::Vulkan
+    glfw
+    glm::glm
+    GPUOpen::VulkanMemoryAllocator
+    vk-bootstrap::vk-bootstrap
+    enet
+    Threads::Threads
+)
+
+# macOS: miniaudio 需要 CoreAudio / AudioToolbox 框架
+if(APPLE)
+    target_link_libraries(MycraftServer PRIVATE
+        "-framework CoreAudio"
+        "-framework AudioToolbox"
+        "-framework CoreFoundation"
+    )
+endif()
+
+target_compile_definitions(MycraftServer PRIVATE
+    MYCRAFT_HEADLESS_SERVER=1
     SHADER_DIR="${SHADER_OUTPUT_DIR}"
     ASSET_DIR="${CMAKE_SOURCE_DIR}/assets"
     SOUND_DIR="${CMAKE_SOURCE_DIR}/assets/sounds"

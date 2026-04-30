@@ -37,6 +37,7 @@
 #include "crafting/smelting_recipe.h"
 #include "renderer/mob_renderer.h"
 #include "renderer/player_renderer.h"
+#include "renderer/remote_player_renderer.h"
 #include "entity/mob_spawner.h"
 #include "ui/game_console.h"
 #include "ui/main_menu_screen.h"
@@ -44,21 +45,34 @@
 #include "audio/block_sound_map.h"
 #include "audio/music_manager.h"
 #include "renderer/gui_atlas.h"
+#include "network/integrated_server.h"
+#include "network/client_connection.h"
 
 #include <memory>
 #include <functional>
 
 class Game {
 public:
+    // MC 原版视角模式（F5 切换）
+    enum class CameraMode {
+        FirstPerson,      // 第一人称（默认）
+        ThirdPersonBack,  // 第三人称背面
+        ThirdPersonFront  // 第三人称正面（第二人称）
+    };
+
     Game();
     ~Game();
 
     void init();
     void run();
 
-    // 世界管理：从菜单进入指定世界
+    // 世界管理：从菜单进入指定世界（单人模式，通过 IntegratedServer）
     void enterWorld(const std::string& worldName, int64_t seed);
     void leaveWorld();  // 保存并返回菜单
+
+    // 多人模式：连接远程服务器
+    void connectToServer(const std::string& host, uint16_t port, const std::string& playerName);
+    void disconnectFromServer();
 
     // Open a container screen (called by block interaction callbacks).
     void openScreen(ContainerScreen* screen);
@@ -75,6 +89,7 @@ private:
     void handleGameplayInput();
     void handleRightClick();
     void releaseBow();  // 松开弓：射出箭矢
+    void sendNetworkAction(PlayerActionType action);  // 发送动作到服务器广播
     void updateChunks();
     void buildMeshes();
     void unloadDistantChunks();
@@ -107,6 +122,11 @@ private:
     void renderMenu(VkCommandBuffer cmd);
     void deleteWorld(const std::string& worldName);
 
+    // 网络同步：处理服务器发来的数据
+    void processNetworkSync();
+    void applyReceivedChunks();
+    void renderRemotePlayers(VkCommandBuffer cmd);
+
     // Save/Load
     void saveAll();       // Save player + dirty chunks + level data
 
@@ -131,6 +151,7 @@ private:
     ParticleSystem   particleSystem_;
     MobRenderer      mobRenderer_;
     PlayerRenderer   playerRenderer_;
+    RemotePlayerRenderer remotePlayerRenderer_;
     MobSpawner       mobSpawner_;
     DayNightCycle    dayNightCycle_;
     GameConsole      console_;
@@ -146,6 +167,13 @@ private:
     MainMenuScreen   mainMenuScreen_;
     WorldSelectScreen worldSelectScreen_;
     CreateWorldScreen createWorldScreen_;
+    ServerConnectScreen serverConnectScreen_;
+
+    // 网络系统
+    std::unique_ptr<IntegratedServer> integratedServer_;  // 单人模式本地服务器
+    std::unique_ptr<ClientConnection> clientConnection_;  // 多人模式远程连接
+    bool isMultiplayer_ = false;  // 当前是否为多人模式
+    std::string connectStatus_;   // 连接状态文本
 
     // Save system
     SaveManager      saveManager_;
@@ -239,6 +267,15 @@ private:
     // ===== 天气音效 =====
     // MC 原版：下雨时播放雨声循环，雷暴时随机播放雷声
     void tickWeatherAmbient();
-    bool isRaining_ = false;      // 天气系统预留（当前始终 false）
-    bool isThundering_ = false;   // 天气系统预留
+    bool isRaining_ = false;
+    bool isThundering_ = false;
+
+    // 网络同步计时器：每 N tick 发送一次位置更新
+    int positionSendTimer_ = 0;
+    static constexpr int POSITION_SEND_INTERVAL = 1;  // 每 tick 发送
+
+    // ===== F5 视角切换系统 =====
+    CameraMode cameraMode_ = CameraMode::FirstPerson;
+    static constexpr float THIRD_PERSON_DISTANCE = 4.0f;  // 第三人称相机距离（方块）
+    void buildLocalPlayerThirdPerson(float partialTick);   // 构建本地玩家第三人称 mesh
 };

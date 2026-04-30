@@ -13,6 +13,8 @@ enum class GameState {
     MainMenu,       // 主菜单
     WorldSelect,    // 世界选择列表
     CreateWorld,    // 创建新世界
+    ServerConnect,  // 多人游戏：输入服务器地址
+    Connecting,     // 正在连接服务器
     Playing         // 游戏中
 };
 
@@ -34,7 +36,7 @@ public:
     void init(UIRenderer* ui, TextureAtlas* atlas);
 
     // 返回值：用户选择的动作
-    enum class Action { None, SinglePlayer, Quit };
+    enum class Action { None, SinglePlayer, Multiplayer, Quit };
     Action update(InputManager& input, float screenW, float screenH);
     void draw(float screenW, float screenH);
 
@@ -42,7 +44,7 @@ private:
     UIRenderer* ui_ = nullptr;
     TextureAtlas* atlas_ = nullptr;
 
-    int hoveredButton_ = -1;  // -1=无, 0=单人游戏, 1=退出
+    int hoveredButton_ = -1;  // -1=无, 0=单人游戏, 1=多人游戏, 2=退出
 
     struct Button {
         std::string label;
@@ -120,4 +122,43 @@ private:
     // 光标闪烁
     double cursorBlinkTime_ = 0.0;
     bool cursorVisible_ = true;
+};
+
+// ============================================================
+// 服务器连接界面（多人游戏）
+// ============================================================
+class ServerConnectScreen {
+public:
+    void init(UIRenderer* ui, TextureAtlas* atlas);
+
+    enum class Action { None, Connect, Cancel };
+    struct Result {
+        Action action = Action::None;
+        std::string host;
+        uint16_t port = 25565;
+        std::string playerName;
+    };
+
+    void open();  // 重置输入状态
+    Result update(InputManager& input, float screenW, float screenH);
+    void draw(float screenW, float screenH);
+
+    // 连接中状态显示
+    void drawConnecting(float screenW, float screenH, const std::string& status);
+
+private:
+    UIRenderer* ui_ = nullptr;
+    TextureAtlas* atlas_ = nullptr;
+
+    std::string addressInput_;   // host:port 格式
+    std::string nameInput_;      // 玩家名称
+    int activeField_ = 0;        // 0=地址, 1=名称
+    int hoveredButton_ = -1;     // 0=连接, 1=取消
+
+    // 光标闪烁
+    double cursorBlinkTime_ = 0.0;
+    bool cursorVisible_ = true;
+
+    // 解析地址
+    void parseAddress(const std::string& addr, std::string& host, uint16_t& port);
 };

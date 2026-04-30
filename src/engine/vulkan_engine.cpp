@@ -815,8 +815,8 @@ void VulkanEngine::createUIPipeline() {
 }
 
 void VulkanEngine::createDescriptorPool() {
-    // 额外预留 descriptor set 给 mob 纹理等扩展用途
-    constexpr uint32_t EXTRA_SETS = 4;
+    // 额外预留 descriptor set 给 mob 纹理、玩家皮肤等扩展用途
+    constexpr uint32_t EXTRA_SETS = 8;
     std::array<VkDescriptorPoolSize, 2> poolSizes{};
     poolSizes[0] = {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, MAX_FRAMES_IN_FLIGHT + EXTRA_SETS};
     poolSizes[1] = {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, MAX_FRAMES_IN_FLIGHT + EXTRA_SETS};
