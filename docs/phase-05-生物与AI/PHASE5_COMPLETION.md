@@ -439,3 +439,161 @@ E → C → K → A → G → J → B → F → I → H → L
 2. 功能可通过游戏内验证（手动测试）
 3. 性能无明显退化（维持 60 FPS @ 200 只生物）
 4. 代码风格与现有代码一致
+
+---
+
+## 八、Phase 5 Extra 实现记录
+
+> 以下为 Phase 5 补完阶段的实际开发记录，包含所有已实现的功能和优化。
+
+---
+
+### Extra 1：完整弓箭系统（MC 原版逻辑）
+
+**日期**：2026-04-30
+
+**实现内容**：
+
+| 功能 | 说明 |
+|------|------|
+| 玩家弓蓄力系统 | 右键持弓 → 检查背包有箭矢 → 开始蓄力（0~20 tick） → 松开射箭 |
+| MC 原版蓄力公式 | `chargeRatio = min(ticks/20, 1.0)`，`speed = ratio*(ratio+2)/3*3.0`，`damage = floor(speed²+0.5)` |
+| 最小蓄力门槛 | 蓄力 ≥ 3 tick 才能射出箭矢，否则取消 |
+| 满蓄力暴击 | speed ≥ 3.0 时为暴击箭（额外伤害） |
+| 非满蓄力散布 | 非满蓄力时箭矢有随机偏移，满蓄力精准 |
+| 弓耐久消耗 | 每次射箭消耗 1 点耐久（最大 384），耐久归零弓损坏 |
+| 第一人称拉弓动画 | 手臂向左上方移动 + 弓贴图切换（bow → pulling_0/1/2） + 满蓄力抖动 |
+| 骷髅拉弓动画 | 20 tick 蓄力延迟 + 右臂逐渐举起到水平 + 左臂辅助拉弦 |
+| 原版贴图资源 | 从 MC 原版复制 bow_pulling_0/1/2.png |
+
+**修改文件**：
+- `src/player/player.h` — 添加弓蓄力状态字段和方法
+- `src/player/player.cpp` — 实现蓄力公式
+- `src/game/game.h` — 添加 `releaseBow()` 声明
+- `src/game/game.cpp` — 右键蓄力逻辑 + 松开射箭 + `releaseBow()` 实现
+- `src/renderer/player_renderer.cpp` — 拉弓动画 + 弓贴图切换
+- `src/entity/ai_goals.h` — `RangedAttackGoal` 支持蓄力状态
+- `src/entity/ai_goals.cpp` — 骷髅 20 tick 蓄力延迟
+- `src/entity/mob_entity.h` — 添加 `bowChargeTicks`/`isChargingBow` 字段
+- `src/renderer/mob_renderer.cpp` — 骷髅拉弓手臂动画
+
+---
+
+### Extra 2：GUI 贴图系统（原版 MC 精灵图）
+
+**日期**：2026-04-30
+
+**实现内容**：
+
+| 功能 | 说明 |
+|------|------|
+| GuiAtlas 系统 | 独立的 GUI 纹理图集，自动扫描 hud/container/widget/title 目录 |
+| UIRenderer 双阶段渲染 | 先渲染方块图集内容，再切换 descriptor set 渲染 GUI 图集 |
+| HUD 贴图化 | hotbar.png、hotbar_selection.png、crosshair.png、heart 系列、food 系列、experience_bar、air 气泡 |
+| 容器界面贴图化 | 使用 container/slot.png 替代纯色矩形格子 |
+| 主菜单贴图化 | title/minecraft.png Logo + widget/button 系列按钮精灵图 |
+| 世界选择/创建界面 | 按钮使用原版 widget/button_highlighted/disabled 精灵图 |
+
+**新增文件**：
+- `src/renderer/gui_atlas.h/.cpp` — GUI 纹理图集系统
+
+**修改文件**：
+- `src/renderer/ui_renderer.h/.cpp` — 添加 GUI 精灵绘制 + 双阶段 flush
+- `src/ui/hud.h/.cpp` — 完全重写，使用原版精灵图
+- `src/ui/container_screen.cpp` — drawSlot 使用 slot.png
+- `src/ui/main_menu_screen.cpp` — Logo + 按钮贴图化
+- `src/game/game.h/.cpp` — 初始化 GuiAtlas
+
+---
+
+### Extra 3：洞穴环境音效系统
+
+**日期**：2026-04-30
+
+**实现内容**：
+
+| 功能 | 说明 |
+|------|------|
+| MC 原版触发机制 | 每 tick 1/6000 概率触发 |
+| 光照检测 | 玩家周围 16 格范围内随机采样 10 次，找到光照 ≤ 3 的空气方块 |
+| 3D 空间音效 | 从暗处方向播放洞穴音效（cave1~23.ogg） |
+| 天气音效预留 | 雨声/雷声接口已实现，天气系统未实现时不触发 |
+
+**新增文件**：
+- `src/game/game_ambient.cpp` — 洞穴/天气环境音效
+
+**修改文件**：
+- `src/audio/sound_engine.h/.cpp` — 注册 AmbientCave/Rain/Thunder 事件
+
+---
+
+### Extra 4：可扩展性全面重构
+
+**日期**：2026-04-30
+
+**重构内容**：
+
+| 模块 | 重构前 | 重构后 | 扩展方式 |
+|------|--------|--------|---------|
+| 方块音效材质 | BlockSoundMap 硬编码 86 行映射 | BlockProperties.soundMaterial | 注册方块时一处设置 |
+| 生物属性注册 | 固定大小数组 `mobs_[COUNT]` | `std::vector<MobProperties>` | push 新属性即可 |
+| 生物掉落物 | 40 行 switch/case | `MobProperties::lootTable` | 注册时声明 lootTable |
+| 生物音效 | 3 个 switch/case | `MobProperties::sounds` | 注册时声明 sounds |
+| 生物模型 | 固定数组 `models_[COUNT]` | `std::vector<MobModelDef>` | resize + 填充 |
+| 生物 AI | 巨大的 tickPassiveAI/tickHostileAI | AIGoal 组件系统 | 新建 AIGoal 子类 |
+
+**新增文件**：
+- `src/audio/sound_material.h` — 独立的 SoundMaterial 枚举
+- `src/entity/ai_goals.h/.cpp` — AI 目标组件系统（6 个具体组件 + A* 寻路）
+
+**修改文件**：
+- `src/core/block.h/.cpp` — BlockProperties 添加 soundMaterial 字段
+- `src/audio/sound_engine.h` — 引用 sound_material.h
+- `src/audio/block_sound_map.cpp` — 从 BlockRegistry 读取（25 行替代 86 行）
+- `src/entity/mob_entity.h/.cpp` — 完全重写，数据驱动 + AI 组件化
+- `src/renderer/mob_renderer.h/.cpp` — 动态容器
+
+---
+
+### Extra 5：性能优化代码审阅
+
+**日期**：2026-04-30
+
+**已确认的优化（已在代码中）**：
+
+| 优化项 | 位置 | 效果 |
+|--------|------|------|
+| 活跃生物索引缓存 | entity_manager.cpp | O(n²) 碰撞推挤中避免重复判断 kind/alive |
+| 距离平方预筛选 | entity_manager.cpp | 碰撞检测避免不必要的 sqrt |
+| mt19937 替代 rand() | entity_manager.cpp, particle_system.cpp | 更好的随机质量 + 线程安全 |
+| 像素缓存 (getOrBuildPixelCache) | player_renderer.cpp | 避免每帧重新扫描 256 像素 |
+| 列向量替代矩阵乘法 | player_renderer.cpp | 手持物品渲染快 ~3x |
+| compact 方式移除死亡粒子 | particle_system.cpp | O(n) 无需移动存活粒子 |
+| unordered_set O(1) 查找 | block_update_system.h | 防止重复计划刻的查找从 O(n) → O(1) |
+| 确定性散射 (position hash) | entity_manager.cpp | 掉落物散射无需 RNG 调用 |
+
+**审阅结论**：
+- 所有性能关键路径已优化
+- 剩余 `std::rand()` 调用（27 处）在低频路径中（生物生成每 400 tick、AI 状态切换），不是瓶颈
+- 粒子系统有 2048 上限保护
+- 实体系统每帧只遍历活跃实体
+- 碰撞检测使用距离平方预筛选避免 sqrt
+
+---
+
+### 项目统计更新
+
+| 指标 | 数值 |
+|------|------|
+| 源文件数 (.h + .cpp) | 92 |
+| 总代码行数 | ~18,500 |
+| 方块种类 | 35 |
+| 物品种类 | 60 |
+| 合成配方 | 32 |
+| 熔炼配方 | 6 |
+| 生物种类 | 8（4 被动 + 4 敌对） |
+| AI 目标组件 | 7（Wander/Flee/Chase/Melee/Ranged/Explode/SpiderNeutral） |
+| 纹理 PNG | 3600+（含原版 MC 全部资源） |
+| GUI 精灵图 | 50+（hotbar/heart/food/xp/crosshair/button/slot/title） |
+| 音效事件 | 30+（方块/生物/环境/UI） |
+| 着色器 | 4 (basic.vert/frag + ui.vert/frag) |
