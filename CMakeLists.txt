@@ -14,6 +14,13 @@ endif()
 
 # --- Find Vulkan ---
 find_package(Vulkan REQUIRED)
+if(NOT Vulkan_FOUND)
+    message(FATAL_ERROR
+        "Vulkan not found! Install:\n"
+        "  macOS: brew install vulkan-headers vulkan-loader shaderc molten-vk\n"
+        "  Linux: sudo apt install vulkan-sdk\n"
+        "  Or run: ./mycraft.sh setup")
+endif()
 
 # --- Fetch dependencies ---
 include(FetchContent)
@@ -103,7 +110,7 @@ endif()
 if(NOT GLSLC)
     message(FATAL_ERROR
         "glslc not found! Please install the Vulkan SDK:\n"
-        "  macOS:  brew install vulkan-sdk\n"
+        "  macOS:  brew install vulkan-headers vulkan-loader shaderc molten-vk\n"
         "  Linux:  sudo apt install vulkan-sdk  (or see https://vulkan.lunarg.com)\n"
         "  Or run: ./mycraft.sh setup")
 endif()

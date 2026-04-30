@@ -72,9 +72,11 @@ cmd_setup() {
             ok "Homebrew ready"
             info "Installing dependencies via Homebrew..."
             brew install cmake git
+            # Vulkan SDK 在 Homebrew 上已拆分为多个独立 formula
+            # 需要: vulkan-headers + vulkan-loader + shaderc(提供glslc) + molten-vk(macOS Metal→Vulkan)
             if ! has glslc; then
-                info "Installing Vulkan SDK..."
-                brew install vulkan-sdk
+                info "Installing Vulkan SDK components..."
+                brew install vulkan-headers vulkan-loader shaderc molten-vk
             fi
             ok "Vulkan SDK ready"
             brew install vulkan-validationlayers 2>/dev/null || true
