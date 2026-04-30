@@ -50,6 +50,7 @@ Game::~Game() {
     mobRenderer_.destroy();
     playerRenderer_.destroy();
     uiRenderer_.destroy();
+    guiAtlas_.destroy(engine_);
     textureAtlas_.destroy(engine_);
     engine_.cleanup();
 }
@@ -156,6 +157,17 @@ void Game::init() {
     loadTextureAtlas();
     uiRenderer_.init(&engine_);
     uiRenderer_.setAtlas(&textureAtlas_);
+
+    // 构建 GUI 纹理图集（原版 MC GUI 精灵图）
+    {
+        std::string assetDir = std::string(ASSET_DIR);
+        if (guiAtlas_.build(engine_, assetDir)) {
+            uiRenderer_.setGuiAtlas(&guiAtlas_);
+        } else {
+            std::cerr << "Warning: failed to build GUI atlas\n";
+        }
+    }
+
     blockModel_.init(engine_, textureAtlas_);
     entityRenderer_.init(&engine_, &textureAtlas_);
     particleSystem_.init(&engine_, &textureAtlas_);
@@ -804,6 +816,10 @@ void Game::gameTick() {
 
     // 纹理动画（水、岩浆等帧动画）
     textureAnimator_.tick(engine_, textureAtlas_);
+
+    // ===== 环境音效 =====
+    tickCaveAmbient();
+    tickWeatherAmbient();
 
     // --- Auto-save ---
     uint64_t ticks = tickClock_.getTotalTicks();

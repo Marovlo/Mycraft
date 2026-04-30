@@ -63,37 +63,29 @@ MainMenuScreen::Action MainMenuScreen::update(InputManager& input, float screenW
 }
 
 void MainMenuScreen::draw(float screenW, float screenH) {
-    // 背景：深色半透明覆盖
+    // 背景：使用原版 menu_background 平铺（16x16 像素深色泥土纹理）
     ui_->drawRect(0, 0, screenW, screenH, glm::vec4(0.1f, 0.1f, 0.15f, 1.0f));
 
-    // 标题 "MYCRAFT"
-    float titleH = 40.0f;
-    float titleY = screenH * 0.25f;
-    ui_->drawText("MYCRAFT", screenW * 0.5f, titleY, titleH, glm::vec4(1.0f, 1.0f, 1.0f, 1.0f));
+    // 标题 Logo（使用原版 minecraft.png，1024x256 像素）
+    // 缩放到合适大小
+    float logoScale = screenW * 0.4f / 1024.0f;
+    float logoW = 1024.0f * logoScale;
+    float logoH = 256.0f * logoScale;
+    float logoX = (screenW - logoW) * 0.5f;
+    float logoY = screenH * 0.12f;
+    ui_->drawGuiSprite("title/minecraft", logoX, logoY, logoW, logoH);
 
-    // 副标题
-    float subH = 14.0f;
-    ui_->drawText("A MINECRAFT CLONE", screenW * 0.5f, titleY + titleH + 10.0f, subH,
-                  glm::vec4(0.7f, 0.7f, 0.7f, 1.0f));
-
-    // 按钮
+    // 按钮（使用原版 widget/button.png 200x20 像素）
     for (int i = 0; i < static_cast<int>(buttons_.size()); i++) {
         auto& btn = buttons_[i];
         bool hovered = (i == hoveredButton_);
 
-        // 按钮背景
-        glm::vec4 bgColor = hovered ? glm::vec4(0.3f, 0.5f, 0.3f, 0.9f)
-                                    : glm::vec4(0.2f, 0.2f, 0.2f, 0.8f);
-        ui_->drawRect(btn.x, btn.y, btn.w, btn.h, bgColor);
-
-        // 按钮边框
-        glm::vec4 borderColor = hovered ? glm::vec4(0.5f, 0.8f, 0.5f, 1.0f)
-                                        : glm::vec4(0.4f, 0.4f, 0.4f, 0.8f);
-        float bw = 1.0f;
-        ui_->drawRect(btn.x, btn.y, btn.w, bw, borderColor);           // top
-        ui_->drawRect(btn.x, btn.y + btn.h - bw, btn.w, bw, borderColor); // bottom
-        ui_->drawRect(btn.x, btn.y, bw, btn.h, borderColor);           // left
-        ui_->drawRect(btn.x + btn.w - bw, btn.y, bw, btn.h, borderColor); // right
+        // MC 原版按钮精灵图
+        if (hovered) {
+            ui_->drawGuiSprite("widget/button_highlighted", btn.x, btn.y, btn.w, btn.h);
+        } else {
+            ui_->drawGuiSprite("widget/button", btn.x, btn.y, btn.w, btn.h);
+        }
 
         // 按钮文字
         float textH = 12.0f;
@@ -415,23 +407,14 @@ void WorldSelectScreen::draw(float screenW, float screenH) {
             disabled = true;
         }
 
-        glm::vec4 bgColor;
+        // 使用原版按钮精灵图
         if (disabled) {
-            bgColor = glm::vec4(0.15f, 0.15f, 0.15f, 0.6f);
+            ui_->drawGuiSprite("widget/button_disabled", bx, btnY, btnW, btnH);
         } else if (hovered) {
-            bgColor = glm::vec4(0.3f, 0.5f, 0.3f, 0.9f);
+            ui_->drawGuiSprite("widget/button_highlighted", bx, btnY, btnW, btnH);
         } else {
-            bgColor = glm::vec4(0.2f, 0.2f, 0.2f, 0.8f);
+            ui_->drawGuiSprite("widget/button", bx, btnY, btnW, btnH);
         }
-        ui_->drawRect(bx, btnY, btnW, btnH, bgColor);
-
-        // 边框
-        glm::vec4 borderColor = hovered && !disabled ? glm::vec4(0.5f, 0.8f, 0.5f, 1.0f)
-                                                     : glm::vec4(0.3f, 0.3f, 0.3f, 0.8f);
-        ui_->drawRect(bx, btnY, btnW, 1.0f, borderColor);
-        ui_->drawRect(bx, btnY + btnH - 1.0f, btnW, 1.0f, borderColor);
-        ui_->drawRect(bx, btnY, 1.0f, btnH, borderColor);
-        ui_->drawRect(bx + btnW - 1.0f, btnY, 1.0f, btnH, borderColor);
 
         // 文字
         float textH = 11.0f;
@@ -730,22 +713,14 @@ void CreateWorldScreen::draw(float screenW, float screenH) {
         bool hovered = (i == hoveredButton_);
         bool disabled = (i == 0 && nameInput_.empty());
 
-        glm::vec4 bgColor;
+        // 使用原版按钮精灵图
         if (disabled) {
-            bgColor = glm::vec4(0.15f, 0.15f, 0.15f, 0.6f);
+            ui_->drawGuiSprite("widget/button_disabled", btnXs[i], btnY, btnW, btnH);
         } else if (hovered) {
-            bgColor = glm::vec4(0.3f, 0.5f, 0.3f, 0.9f);
+            ui_->drawGuiSprite("widget/button_highlighted", btnXs[i], btnY, btnW, btnH);
         } else {
-            bgColor = glm::vec4(0.2f, 0.2f, 0.2f, 0.8f);
+            ui_->drawGuiSprite("widget/button", btnXs[i], btnY, btnW, btnH);
         }
-        ui_->drawRect(btnXs[i], btnY, btnW, btnH, bgColor);
-
-        glm::vec4 borderColor = hovered && !disabled ? glm::vec4(0.5f, 0.8f, 0.5f, 1.0f)
-                                                     : glm::vec4(0.3f, 0.3f, 0.3f, 0.8f);
-        ui_->drawRect(btnXs[i], btnY, btnW, 1.0f, borderColor);
-        ui_->drawRect(btnXs[i], btnY + btnH - 1.0f, btnW, 1.0f, borderColor);
-        ui_->drawRect(btnXs[i], btnY, 1.0f, btnH, borderColor);
-        ui_->drawRect(btnXs[i] + btnW - 1.0f, btnY, 1.0f, btnH, borderColor);
 
         float textH = 11.0f;
         float textY = btnY + (btnH - textH) * 0.5f;

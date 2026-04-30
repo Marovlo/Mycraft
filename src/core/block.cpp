@@ -57,6 +57,7 @@ void BlockRegistry::registerDefaults() {
         .requiredToolType = ToolType::Shovel,
         .requiredMiningLevel = 0,
         .requireToolForDrops = false,
+        .soundMaterial = SoundMaterial::Grass,
         .drops = { D{Item::Dirt, 1, 1} },
     });
 
@@ -70,6 +71,7 @@ void BlockRegistry::registerDefaults() {
         .isOpaque = true,
         .hardness = 0.5f,
         .requiredToolType = ToolType::Shovel,
+        .soundMaterial = SoundMaterial::Grass,
         .drops = { D{Item::Dirt, 1, 1} },
     });
 
@@ -98,6 +100,7 @@ void BlockRegistry::registerDefaults() {
         .isOpaque = true,
         .hardness = 0.5f,
         .requiredToolType = ToolType::Shovel,
+        .soundMaterial = SoundMaterial::Sand,
         .drops = { D{Item::Sand, 1, 1} },
     });
 
@@ -111,6 +114,7 @@ void BlockRegistry::registerDefaults() {
         .isOpaque = true,
         .hardness = 2.0f,
         .requiredToolType = ToolType::Axe,
+        .soundMaterial = SoundMaterial::Wood,
         .drops = { D{Item::OakLog, 1, 1} },
     });
 
@@ -125,6 +129,7 @@ void BlockRegistry::registerDefaults() {
         .hardness = 0.2f,
         .requiredToolType = ToolType::None,
         .requireToolForDrops = false,
+        .soundMaterial = SoundMaterial::Grass,
         .drops = { D{Item::Apple, 0, 1} },   // 0-1 apples (for now always 1; RNG later)
     });
 
@@ -164,6 +169,7 @@ void BlockRegistry::registerDefaults() {
         .isOpaque = true,
         .hardness = 2.0f,
         .requiredToolType = ToolType::Axe,
+        .soundMaterial = SoundMaterial::Wood,
         .drops = { D{Item::OakPlanks, 1, 1} },
     });
 
@@ -188,6 +194,7 @@ void BlockRegistry::registerDefaults() {
         .isOpaque = true,
         .hardness = 0.6f,
         .requiredToolType = ToolType::Shovel,
+        .soundMaterial = SoundMaterial::Gravel,
         .drops = { D{Item::Gravel, 1, 1} },
     });
 
@@ -202,6 +209,7 @@ void BlockRegistry::registerDefaults() {
         .hardness = 2.5f,
         .isInteractable = true,
         .requiredToolType = ToolType::Axe,
+        .soundMaterial = SoundMaterial::Wood,
         .drops = { D{Item::CraftingTable, 1, 1} },
     });
 
@@ -221,6 +229,7 @@ void BlockRegistry::registerDefaults() {
             .requiredToolType = ToolType::Pickaxe,
             .requiredMiningLevel = miningLevel,
             .requireToolForDrops = true,
+            .soundMaterial = SoundMaterial::Stone,
             .drops = { D{dropItem, dropMin, dropMax} },
         });
     };
@@ -248,6 +257,7 @@ void BlockRegistry::registerDefaults() {
         .hardness = 3.5f,
         .isInteractable = true,
         .requiredToolType = ToolType::Pickaxe,
+        .soundMaterial = SoundMaterial::Stone,
         .drops = { D{Item::Furnace, 1, 1} },
     });
 
@@ -262,6 +272,7 @@ void BlockRegistry::registerDefaults() {
             .isSolid = false,
             .isOpaque = false,
             .hardness = 0.0f,  // instant break
+            .soundMaterial = SoundMaterial::Grass,
             .drops = dropItem != Item::None ? std::vector<D>{ D{dropItem, 1, 1} } : std::vector<D>{},
         });
     };
@@ -284,6 +295,7 @@ void BlockRegistry::registerDefaults() {
         .isOpaque = false,
         .hardness = 0.0f,
         .lightEmit = 14,
+        .soundMaterial = SoundMaterial::Wood,
     });
 
     // --- Biome blocks (id 30-34) ---
@@ -293,6 +305,7 @@ void BlockRegistry::registerDefaults() {
         .textureNames = BlockFaceTextureNames::uniform("snow"),
         .isSolid = true, .isOpaque = true, .hardness = 0.2f,
         .requiredToolType = ToolType::Shovel,
+        .soundMaterial = SoundMaterial::Snow,
     });
     registerBlock({  // 31 Sandstone
         .name = "sandstone", .displayName = "Sandstone",
@@ -307,6 +320,7 @@ void BlockRegistry::registerDefaults() {
         .textureNames = BlockFaceTextureNames::topBottom("spruce_log_top", "spruce_log_top", "spruce_log_side"),
         .isSolid = true, .isOpaque = true, .hardness = 2.0f,
         .requiredToolType = ToolType::Axe,
+        .soundMaterial = SoundMaterial::Wood,
         .drops = { D{Item::OakLog, 1, 1} },  // drops generic log for now
     });
     registerBlock({  // 33 Spruce Leaves
@@ -314,12 +328,14 @@ void BlockRegistry::registerDefaults() {
         .renderType = BlockRenderType::Foliage,
         .textureNames = BlockFaceTextureNames::uniform("spruce_leaves"),
         .isSolid = true, .isOpaque = false, .hardness = 0.2f,
+        .soundMaterial = SoundMaterial::Grass,
     });
     registerBlock({  // 34 Cactus
         .name = "cactus", .displayName = "Cactus",
         .renderType = BlockRenderType::Opaque,
         .textureNames = BlockFaceTextureNames::topBottom("cactus_top", "cactus_top", "cactus_side"),
         .isSolid = true, .isOpaque = true, .hardness = 0.4f,
+        .soundMaterial = SoundMaterial::Cloth,
     });
 
     // Block::Chest (id = 35)
@@ -336,6 +352,7 @@ void BlockRegistry::registerDefaults() {
         .hardness = 2.5f,
         .isInteractable = true,
         .requiredToolType = ToolType::Axe,
+        .soundMaterial = SoundMaterial::Wood,
         .drops = { D{Item::Chest, 1, 1} },
     });
 
@@ -348,6 +365,7 @@ void BlockRegistry::registerDefaults() {
         .isSolid = true,
         .isOpaque = true,
         .hardness = 0.8f,
+        .soundMaterial = SoundMaterial::Cloth,
         .drops = { D{Item::WhiteWool, 1, 1} },
     });
 }

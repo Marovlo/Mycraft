@@ -15,6 +15,10 @@ namespace fs = std::filesystem;
 // ========== 模型注册 ==========
 
 void MobRenderer::registerModels() {
+    int mobCount = static_cast<int>(MobType::COUNT);
+    models_.resize(mobCount);
+    texRegions_.resize(mobCount);
+
     // ========== 猪 (Pig) ==========
     // MC原版Java: 纹理64x32, 头8x8x8 UV(0,0), 身体addBox(-5,-10,-7, 10,16,8) UV(28,8), 腿4x6x4 UV(0,16)
     // 身体在Java中是竖直定义后旋转90度变水平，所以3D尺寸(10,8,16)但UV用(10,16,8)
@@ -199,7 +203,8 @@ bool MobRenderer::loadMobTextures(VulkanEngine& engine, const std::string& mobTe
     };
 
     std::vector<TexEntry> entries;
-    for (int i = 0; i < static_cast<int>(MobType::COUNT); i++) {
+    int mobCount = static_cast<int>(MobType::COUNT);
+    for (int i = 0; i < mobCount; i++) {
         auto& model = models_[i];
         std::string path = mobTextureDir + "/" + model.textureName + ".png";
         if (!fs::exists(path)) {
@@ -238,6 +243,7 @@ bool MobRenderer::loadMobTextures(VulkanEngine& engine, const std::string& mobTe
     int xOffset = 0;
     for (auto& e : entries) {
         int idx = static_cast<int>(e.type);
+        if (idx >= static_cast<int>(texRegions_.size())) texRegions_.resize(idx + 1);
         texRegions_[idx].uOffset = static_cast<float>(xOffset) / atlasWidth_;
         texRegions_[idx].vOffset = 0.0f;
         texRegions_[idx].uScale = static_cast<float>(e.w) / atlasWidth_;

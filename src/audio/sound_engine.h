@@ -12,22 +12,7 @@
 struct ma_engine;
 struct ma_sound;
 
-// ========== 音效材质类型（MC 原版方块音效分组） ==========
-// 每种材质对应一组 dig/step/place 音效
-enum class SoundMaterial : uint8_t {
-    Stone,      // 石头、矿石、砖块等
-    Wood,       // 木头、木板
-    Gravel,     // 沙砾
-    Grass,      // 草方块、泥土
-    Sand,       // 沙子
-    Snow,       // 雪
-    Cloth,      // 羊毛
-    Glass,      // 玻璃（只有破坏音效）
-    Coral,      // 珊瑚
-    WetGrass,   // 湿草
-    Metal,      // 金属方块
-    Count
-};
+#include "sound_material.h"
 
 // ========== 音效事件 ID ==========
 // MC 原版中每个音效事件对应一组可选的 .ogg 文件，随机选一个播放
@@ -111,6 +96,11 @@ enum class SoundEventId : uint16_t {
     // --- 物品/经验 ---
     ItemPickup,         // random/pop
     XPOrbPickup,        // random/orb
+
+    // --- 环境音效 ---
+    AmbientCave,        // ambient/cave/cave1~23
+    AmbientRain,        // ambient/weather/rain1~8
+    AmbientThunder,     // ambient/weather/thunder1~3
 
     Count
 };

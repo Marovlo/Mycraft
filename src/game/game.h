@@ -43,6 +43,7 @@
 #include "audio/sound_engine.h"
 #include "audio/block_sound_map.h"
 #include "audio/music_manager.h"
+#include "renderer/gui_atlas.h"
 
 #include <memory>
 #include <functional>
@@ -179,6 +180,7 @@ private:
 
     TextureAtlas textureAtlas_;
     TextureAnimator textureAnimator_;
+    GuiAtlas guiAtlas_;
     BlockUpdateSystem blockUpdateSystem_;
     SkyRenderer skyRenderer_;
 
@@ -224,4 +226,14 @@ private:
     float stepSoundDistance_ = 0.0f;
     // 挖掘音效计时器（MC 原版：挖掘过程中每 4 tick 播放一次挖掘音效）
     int   digSoundTimer_ = 0;
+
+    // ===== 洞穴环境音效 =====
+    // MC 原版：每 tick 1/6000 概率触发，检测玩家附近光照 ≤ 3 的方块
+    void tickCaveAmbient();
+
+    // ===== 天气音效 =====
+    // MC 原版：下雨时播放雨声循环，雷暴时随机播放雷声
+    void tickWeatherAmbient();
+    bool isRaining_ = false;      // 天气系统预留（当前始终 false）
+    bool isThundering_ = false;   // 天气系统预留
 };

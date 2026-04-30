@@ -214,9 +214,64 @@ void UIRenderer::drawTextLeft(const std::string& text, float leftX, float y, flo
     }
 }
 
-void UIRenderer::ensureBufferCapacity() {
-    VkDeviceSize neededVB = sizeof(UIVertex) * vertices_.size();
-    VkDeviceSize neededIB = sizeof(uint32_t) * indices_.size();
+// ============================================================
+// GUI 精灵绘制（使用 GUI 图集纹理）
+// ============================================================
+
+void UIRenderer::addGuiQuad(float x0, float y0, float x1, float y1,
+                            float u0, float v0, float u1, float v1,
+                            const glm::vec4& color) {
+    uint32_t base = static_cast<uint32_t>(guiVertices_.size());
+    guiVertices_.push_back({{x0, y0}, {u0, v0}, color});
+    guiVertices_.push_back({{x1, y0}, {u1, v0}, color});
+    guiVertices_.push_back({{x1, y1}, {u1, v1}, color});
+    guiVertices_.push_back({{x0, y1}, {u0, v1}, color});
+    guiIndices_.push_back(base + 0);
+    guiIndices_.push_back(base + 1);
+    guiIndices_.push_back(base + 2);
+    guiIndices_.push_back(base + 0);
+    guiIndices_.push_back(base + 2);
+    guiIndices_.push_back(base + 3);
+}
+
+void UIRenderer::drawGuiSprite(const std::string& spriteName, float x, float y, float w, float h,
+                               const glm::vec4& tint) {
+    if (!guiAtlas_ || !guiAtlas_->isBuilt()) return;
+    const auto& sp = guiAtlas_->getSprite(spriteName);
+    if (sp.pixelW == 0) return;  // 找不到精灵
+    addGuiQuad(x, y, x + w, y + h, sp.u0, sp.v0, sp.u1, sp.v1, tint);
+}
+
+void UIRenderer::drawGuiSpriteRegion(const std::string& spriteName,
+                                     float x, float y, float w, float h,
+                                     float srcX, float srcY, float srcW, float srcH,
+                                     const glm::vec4& tint) {
+    if (!guiAtlas_ || !guiAtlas_->isBuilt()) return;
+    const auto& sp = guiAtlas_->getSprite(spriteName);
+    if (sp.pixelW == 0) return;
+    // 计算子区域的 UV
+    float uRange = sp.u1 - sp.u0;
+    float vRange = sp.v1 - sp.v0;
+    float su0 = sp.u0 + (srcX / sp.pixelW) * uRange;
+    float sv0 = sp.v0 + (srcY / sp.pixelH) * vRange;
+    float su1 = sp.u0 + ((srcX + srcW) / sp.pixelW) * uRange;
+    float sv1 = sp.v0 + ((srcY + srcH) / sp.pixelH) * vRange;
+    addGuiQuad(x, y, x + w, y + h, su0, sv0, su1, sv1, tint);
+}
+
+void UIRenderer::drawGuiSpriteUV(const GuiSprite& sprite, float x, float y, float w, float h,
+                                  const glm::vec4& tint) {
+    if (sprite.pixelW == 0) return;
+    addGuiQuad(x, y, x + w, y + h, sprite.u0, sprite.v0, sprite.u1, sprite.v1, tint);
+}
+
+// ============================================================
+// Buffer management
+// ============================================================
+
+void UIRenderer::ensureBufferCapacity(size_t vertCount, size_t idxCount) {
+    VkDeviceSize neededVB = sizeof(UIVertex) * vertCount;
+    VkDeviceSize neededIB = sizeof(uint32_t) * idxCount;
 
     // Grow vertex buffer if needed
     if (neededVB > vertexBufferSize_) {
@@ -237,35 +292,53 @@ void UIRenderer::ensureBufferCapacity() {
     }
 }
 
+// ============================================================
+// Flush — 两阶段渲染：先方块图集，再 GUI 图集
+// ============================================================
+
+void UIRenderer::flushBatch(VkCommandBuffer cmd, uint32_t screenWidth, uint32_t screenHeight,
+                            const std::vector<UIVertex>& verts, const std::vector<uint32_t>& idxs,
+                            VkDescriptorSet descriptorSet) {
+    if (verts.empty()) return;
+
+    ensureBufferCapacity(verts.size(), idxs.size());
+
+    void* vData = engine_->mapBuffer(vertexBuffer_);
+    memcpy(vData, verts.data(), sizeof(UIVertex) * verts.size());
+    engine_->unmapBuffer(vertexBuffer_);
+
+    void* iData = engine_->mapBuffer(indexBuffer_);
+    memcpy(iData, idxs.data(), sizeof(uint32_t) * idxs.size());
+    engine_->unmapBuffer(indexBuffer_);
+
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+        engine_->getUIPipelineLayout(), 0, 1, &descriptorSet, 0, nullptr);
+
+    VkBuffer vb[] = {vertexBuffer_.buffer};
+    VkDeviceSize offsets[] = {0};
+    vkCmdBindVertexBuffers(cmd, 0, 1, vb, offsets);
+    vkCmdBindIndexBuffer(cmd, indexBuffer_.buffer, 0, VK_INDEX_TYPE_UINT32);
+    vkCmdDrawIndexed(cmd, static_cast<uint32_t>(idxs.size()), 1, 0, 0, 0);
+}
+
 void UIRenderer::flush(VkCommandBuffer cmd, uint32_t screenWidth, uint32_t screenHeight) {
     flushWithTexture(cmd, screenWidth, screenHeight, VK_NULL_HANDLE, VK_NULL_HANDLE);
 }
 
 void UIRenderer::flushWithTexture(VkCommandBuffer cmd, uint32_t screenWidth, uint32_t screenHeight,
                                    VkImageView textureView, VkSampler sampler) {
-    if (vertices_.empty() || !engine_) {
-        vertices_.clear();
-        indices_.clear();
+    bool hasMain = !vertices_.empty();
+    bool hasGui  = !guiVertices_.empty();
+
+    if (!hasMain && !hasGui) {
         return;
     }
 
-    // Temporarily update texture descriptor if a custom texture is specified
-    if (textureView != VK_NULL_HANDLE && sampler != VK_NULL_HANDLE) {
-        engine_->updateTextureDescriptor(textureView, sampler);
+    if (!engine_) {
+        vertices_.clear(); indices_.clear();
+        guiVertices_.clear(); guiIndices_.clear();
+        return;
     }
-
-    ensureBufferCapacity();
-
-    // Direct memcpy — no staging, no command submit, no GPU stall
-    void* vData = engine_->mapBuffer(vertexBuffer_);
-    memcpy(vData, vertices_.data(), sizeof(UIVertex) * vertices_.size());
-    engine_->unmapBuffer(vertexBuffer_);
-
-    void* iData = engine_->mapBuffer(indexBuffer_);
-    memcpy(iData, indices_.data(), sizeof(uint32_t) * indices_.size());
-    engine_->unmapBuffer(indexBuffer_);
-
-    uint32_t indexCount = static_cast<uint32_t>(indices_.size());
 
     // Switch to UI pipeline
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, engine_->getUIPipeline());
@@ -286,19 +359,37 @@ void UIRenderer::flushWithTexture(VkCommandBuffer cmd, uint32_t screenWidth, uin
     vkCmdPushConstants(cmd, engine_->getUIPipelineLayout(),
                        VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(UIPushConstants), &pc);
 
-    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-        engine_->getUIPipelineLayout(), 0, 1,
-        &engine_->getCurrentFrame().descriptorSet, 0, nullptr);
+    // Pass 1: 方块图集内容（文字、方块图标、纯色矩形等）
+    if (hasMain) {
+        // 如果指定了自定义纹理，临时更新 descriptor
+        if (textureView != VK_NULL_HANDLE && sampler != VK_NULL_HANDLE) {
+            engine_->updateTextureDescriptor(textureView, sampler);
+        }
+        flushBatch(cmd, screenWidth, screenHeight, vertices_, indices_,
+                   engine_->getCurrentFrame().descriptorSet);
+    }
 
-    VkBuffer vb[] = {vertexBuffer_.buffer};
-    VkDeviceSize offsets[] = {0};
-    vkCmdBindVertexBuffers(cmd, 0, 1, vb, offsets);
-    vkCmdBindIndexBuffer(cmd, indexBuffer_.buffer, 0, VK_INDEX_TYPE_UINT32);
-    vkCmdDrawIndexed(cmd, indexCount, 1, 0, 0, 0);
+    // Pass 2: GUI 图集内容（HUD 精灵、容器背景等）
+    if (hasGui && guiAtlas_ && guiAtlas_->isBuilt()) {
+        // 为 GUI 图集分配独立的 descriptor set（只分配一次）
+        if (!guiDescriptorAllocated_) {
+            guiDescriptorSet_ = engine_->allocateExtraDescriptorSet(
+                guiAtlas_->getImageView(), guiAtlas_->getSampler());
+            guiDescriptorAllocated_ = true;
+        }
+        flushBatch(cmd, screenWidth, screenHeight, guiVertices_, guiIndices_,
+                   guiDescriptorSet_);
+    }
 
     // Restore 3D pipeline
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, engine_->getPipeline());
+    // 恢复方块纹理 descriptor
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+        engine_->getPipelineLayout(), 0, 1,
+        &engine_->getCurrentFrame().descriptorSet, 0, nullptr);
 
     vertices_.clear();
     indices_.clear();
+    guiVertices_.clear();
+    guiIndices_.clear();
 }

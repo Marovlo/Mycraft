@@ -382,24 +382,12 @@ void ContainerScreen::drawSlot(float x, float y, float size, int scale,
     float borderPx = BORDER * scale;
     float iconPadPx = ICON_PAD * scale;
 
-    glm::vec4 bgColor = highlight
-        ? glm::vec4(0.65f, 0.65f, 0.68f, 0.92f)
-        : glm::vec4(0.45f, 0.45f, 0.47f, 0.90f);
-    ui_->drawRect(x, y, size, size, bgColor);
+    // 使用原版 slot.png (18x18) 作为格子背景
+    ui_->drawGuiSprite("container/slot", x, y, size, size);
 
-    glm::vec4 borderLight(0.60f, 0.60f, 0.62f, 0.75f);
-    glm::vec4 borderDark(0.30f, 0.30f, 0.32f, 0.75f);
-    ui_->drawRect(x, y, size, borderPx, borderLight);
-    ui_->drawRect(x, y, borderPx, size, borderLight);
-    ui_->drawRect(x, y + size - borderPx, size, borderPx, borderDark);
-    ui_->drawRect(x + size - borderPx, y, borderPx, size, borderDark);
-
+    // 悬停高亮覆盖层
     if (highlight) {
-        glm::vec4 hl(1.0f, 1.0f, 1.0f, 0.7f);
-        ui_->drawRect(x, y, size, borderPx, hl);
-        ui_->drawRect(x, y + size - borderPx, size, borderPx, hl);
-        ui_->drawRect(x, y, borderPx, size, hl);
-        ui_->drawRect(x + size - borderPx, y, borderPx, size, hl);
+        ui_->drawRect(x, y, size, size, glm::vec4(1.0f, 1.0f, 1.0f, 0.3f));
     }
 
     if (stack.isEmpty()) return;

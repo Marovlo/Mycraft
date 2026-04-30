@@ -8,6 +8,7 @@
 #include <glm/glm.hpp>
 #include "common.h"
 #include "item.h"     // ToolType, ItemId, ItemStack
+#include "audio/sound_material.h"
 
 // ========== Block ID ==========
 // Using uint16_t to support up to 65535 block types (MC has ~900)
@@ -142,6 +143,10 @@ struct BlockProperties {
     ToolType requiredToolType  = ToolType::None;
     int     requiredMiningLevel = 0;     // 0=wooden, 1=stone, 2=iron, 3=diamond
     bool    requireToolForDrops = false; // Stone needs pickaxe to drop cobblestone
+
+    // --- 音效材质 ---
+    // 决定行走、破坏、放置时的音效组。默认 Stone。
+    SoundMaterial soundMaterial = SoundMaterial::Stone;
 
     // Drops list. Evaluated in order; first matching rule wins. Empty = no drops.
     // Each rule: which item, how many, and (if requireToolForDrops) gating on tool.

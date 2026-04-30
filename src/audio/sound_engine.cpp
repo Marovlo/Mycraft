@@ -440,5 +440,46 @@ void SoundEngine::registerSoundEvents() {
     reg(SoundEventId::ItemPickup,     {{"random/pop.ogg"},                       0.3f, 1.0f, 0.2f, true});
     reg(SoundEventId::XPOrbPickup,    {{"random/orb.ogg"},                       0.3f, 1.0f, 0.2f, false});
 
+    // ===== 环境音效 =====
+    // 洞穴环境音效（cave1~23.ogg）
+    {
+        std::vector<std::string> caveFiles;
+        for (int i = 1; i <= 23; ++i) {
+            std::string path = "ambient/cave/cave" + std::to_string(i) + ".ogg";
+            if (std::filesystem::exists(basePath_ + path)) {
+                caveFiles.push_back(path);
+            }
+        }
+        if (!caveFiles.empty()) {
+            reg(SoundEventId::AmbientCave, {caveFiles, 0.7f, 1.0f, 0.0f, true});
+        }
+    }
+    // 雨声（rain1~8.ogg）
+    {
+        std::vector<std::string> rainFiles;
+        for (int i = 1; i <= 8; ++i) {
+            std::string path = "ambient/weather/rain" + std::to_string(i) + ".ogg";
+            if (std::filesystem::exists(basePath_ + path)) {
+                rainFiles.push_back(path);
+            }
+        }
+        if (!rainFiles.empty()) {
+            reg(SoundEventId::AmbientRain, {rainFiles, 0.5f, 1.0f, 0.0f, false});
+        }
+    }
+    // 雷声（thunder1~3.ogg）
+    {
+        std::vector<std::string> thunderFiles;
+        for (int i = 1; i <= 3; ++i) {
+            std::string path = "ambient/weather/thunder" + std::to_string(i) + ".ogg";
+            if (std::filesystem::exists(basePath_ + path)) {
+                thunderFiles.push_back(path);
+            }
+        }
+        if (!thunderFiles.empty()) {
+            reg(SoundEventId::AmbientThunder, {thunderFiles, 1.0f, 1.0f, 0.1f, true});
+        }
+    }
+
     std::cout << "[SoundEngine] 注册了 " << eventDefs_.size() << " 个音效事件" << std::endl;
 }

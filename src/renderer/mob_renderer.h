@@ -71,8 +71,8 @@ private:
     // 每帧独立的 descriptor set（绑定 mob 纹理 + 当前帧 UBO）
     VkDescriptorSet mobDescriptorSets_[2] = {VK_NULL_HANDLE, VK_NULL_HANDLE};
 
-    // 模型定义
-    MobModelDef models_[static_cast<int>(MobType::COUNT)];
+    // 模型定义（动态容器，支持扩展）
+    std::vector<MobModelDef> models_;
     void registerModels();
 
     // 每种生物纹理在图集中的 UV 偏移
@@ -80,7 +80,7 @@ private:
         float uOffset, vOffset;  // 归一化偏移
         float uScale, vScale;    // 归一化缩放
     };
-    TexRegion texRegions_[static_cast<int>(MobType::COUNT)];
+    std::vector<TexRegion> texRegions_;
 
     // CPU staging
     std::vector<Vertex> vertices_;
