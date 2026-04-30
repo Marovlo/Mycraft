@@ -34,6 +34,7 @@ info()  { echo -e "${CYAN}[INFO]${NC}  $*"; }
 ok()    { echo -e "${GREEN}[OK]${NC}    $*"; }
 warn()  { echo -e "${YELLOW}[WARN]${NC}  $*"; }
 fail()  { echo -e "${RED}[FAIL]${NC}  $*"; exit 1; }
+fail_no_exit() { echo -e "${RED}[FAIL]${NC}  $*"; }
 
 # ============================================================================
 # 子命令: setup — 安装依赖
@@ -180,6 +181,13 @@ setup_vulkan_env() {
 }
 
 preflight() {
+    # 确保 Homebrew 路径在 PATH 中（macOS 上 bash 脚本可能没有加载 shell profile）
+    if [ -d /opt/homebrew/bin ] && [[ ":$PATH:" != *":/opt/homebrew/bin:"* ]]; then
+        export PATH="/opt/homebrew/bin:$PATH"
+    elif [ -d /usr/local/bin ] && [[ ":$PATH:" != *":/usr/local/bin:"* ]]; then
+        export PATH="/usr/local/bin:$PATH"
+    fi
+
     local missing=()
     command -v cmake &>/dev/null || missing+=("cmake")
     command -v git   &>/dev/null || missing+=("git")
@@ -220,16 +228,59 @@ cmd_build() {
     mkdir -p "$BUILD_DIR"
     cd "$BUILD_DIR"
 
+    # --- CMake 配置阶段 ---
     info "Configuring (${build_type}, target: ${target})..."
-    cmake "$SCRIPT_DIR" -DCMAKE_BUILD_TYPE="$build_type" 2>&1 | tail -5
+    local cmake_log="${BUILD_DIR}/cmake_configure.log"
+    if cmake "$SCRIPT_DIR" -DCMAKE_BUILD_TYPE="$build_type" > "$cmake_log" 2>&1; then
+        # 成功：只显示关键摘要
+        grep -E "^-- (Configuring done|Generating done|Build files|Found Vulkan|Using glslc)" "$cmake_log" | while read -r line; do
+            echo "  $line"
+        done
+        ok "Configuration complete"
+    else
+        # 失败：显示完整错误
+        echo ""
+        fail_no_exit "CMake configuration failed! Full log:"
+        echo "────────────────────────────────────────"
+        cat "$cmake_log"
+        echo "────────────────────────────────────────"
+        echo ""
+        # 检测常见错误并给出建议
+        if grep -q "FetchContent" "$cmake_log" && grep -qi "error\|fatal\|failed" "$cmake_log"; then
+            warn "Looks like a dependency download failed. Possible fixes:"
+            echo "  1. Check your internet connection"
+            echo "  2. If behind a proxy: git config --global http.proxy http://host:port"
+            echo "  3. If in China: git config --global url.\"https://ghproxy.com/https://github.com\".insteadOf \"https://github.com\""
+            echo "  4. Retry: ./mycraft.sh build --clean"
+        elif grep -q "glslc not found" "$cmake_log"; then
+            warn "Vulkan SDK not installed. Run: ./mycraft.sh setup"
+        elif grep -q "Could NOT find Vulkan" "$cmake_log"; then
+            warn "Vulkan SDK not found. Run: ./mycraft.sh setup"
+        fi
+        exit 1
+    fi
 
+    # --- 编译阶段 ---
     echo ""
     info "Building ${target} with ${jobs} parallel jobs..."
     local start_time=$SECONDS
-    cmake --build . --target "$target" -j "$jobs" 2>&1 | tail -10
-
-    local elapsed=$((SECONDS - start_time))
-    ok "Build complete in ${elapsed}s"
+    local build_log="${BUILD_DIR}/cmake_build.log"
+    if cmake --build . --target "$target" -j "$jobs" > "$build_log" 2>&1; then
+        # 成功：显示进度摘要
+        local total_targets
+        total_targets=$(grep -c "^\[" "$build_log" 2>/dev/null || echo "0")
+        ok "Build complete — ${total_targets} steps in $((SECONDS - start_time))s"
+    else
+        # 失败：显示最后的错误
+        echo ""
+        fail_no_exit "Build failed! Errors:"
+        echo "────────────────────────────────────────"
+        grep -A2 -E "error:|FAILED:" "$build_log" | tail -30
+        echo "────────────────────────────────────────"
+        echo ""
+        info "Full build log: ${build_log}"
+        exit 1
+    fi
 }
 
 # ============================================================================
