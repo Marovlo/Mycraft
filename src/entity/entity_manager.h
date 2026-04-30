@@ -40,4 +40,6 @@ public:
 
 private:
     std::vector<std::unique_ptr<Entity>> entities_;
+    // 性能优化：缓存活跃生物索引，避免每帧在 O(n²) 碰撞中重复判断
+    std::vector<size_t> activeMobs_;
 };

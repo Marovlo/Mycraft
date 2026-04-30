@@ -633,14 +633,23 @@ void Game::update(float dt) {
     blockInteraction_.getActiveBreak(bbx, bby, bbz, bProg);
 
     // 检测准星是否指向生物（用于显示攻击标识）
+    // 优化：先用距离平方预筛选，避免对远处生物做 AABB 射线检测
     targetingMob_ = false;
     if (!player_.dead && input_.isCursorLocked()) {
         glm::vec3 eye = player_.getEyePosition();
         glm::vec3 fwd = player_.getForward();
+        float closestT = MAX_REACH;
         for (const auto& e : entityManager_.entities()) {
             if (!e || !e->alive || e->kind() != EntityKind::Mob) continue;
             auto& mob = static_cast<const MobEntity&>(*e);
             if (mob.isDying) continue;
+
+            // 距离平方预筛选：超过 MAX_REACH + 生物半径 的生物不可能被命中
+            glm::vec3 toMob = mob.position - eye;
+            float distSq = glm::dot(toMob, toMob);
+            float maxCheckDist = MAX_REACH + mob.mobWidth;
+            if (distSq > maxCheckDist * maxCheckDist) continue;
+
             glm::vec3 minB = mob.getHitboxMin();
             glm::vec3 maxB = mob.getHitboxMax();
             float tmin = 0.0f, tmax = MAX_REACH;
@@ -658,7 +667,12 @@ void Game::update(float dt) {
                     if (tmin > tmax) { hit = false; break; }
                 }
             }
-            if (hit) { targetingMob_ = true; break; }
+            if (hit && tmin < closestT) {
+                targetingMob_ = true;
+                closestT = tmin;
+                // 找到最近的即可，不需要继续遍历所有生物
+                // （但为了精确性仍然继续检查更近的）
+            }
         }
     }
 
@@ -836,7 +850,8 @@ void Game::gameTick() {
     }
 
     // --- Incremental chunk save: spread IO across ticks ---
-    {
+    // 优化：每 10 tick 检查一次（降低全量遍历频率，IO 操作本身就不需要每 tick）
+    if (tickClock_.getTotalTicks() % 10 == 0) {
         int saved = 0;
         for (auto& [key, chunk] : world_.chunks()) {
             if (saved >= INCREMENTAL_SAVE_PER_TICK) break;
@@ -1501,21 +1516,20 @@ void Game::render(VkCommandBuffer cmd) {
     // Transparent chunk meshes (water, glass) — rough back-to-front by chunk distance
     {
         glm::vec3 camPos = player_.getEyePosition();
-        struct ChunkDist { Chunk* chunk; float distSq; };
-        std::vector<ChunkDist> transChunks;
+        transChunksSorted_.clear();
         for (auto& [key, chunk] : world_.chunks()) {
             if (!chunk.hasTransparentMesh()) continue;
             float cx = static_cast<float>(chunk.worldX()) + CHUNK_SIZE * 0.5f;
             float cz = static_cast<float>(chunk.worldZ()) + CHUNK_SIZE * 0.5f;
             float dx = cx - camPos.x;
             float dz = cz - camPos.z;
-            transChunks.push_back({&chunk, dx * dx + dz * dz});
+            transChunksSorted_.push_back({&chunk, dx * dx + dz * dz});
         }
         // Sort back-to-front (farthest first)
-        std::sort(transChunks.begin(), transChunks.end(),
+        std::sort(transChunksSorted_.begin(), transChunksSorted_.end(),
                   [](const ChunkDist& a, const ChunkDist& b) { return a.distSq > b.distSq; });
 
-        for (auto& cd : transChunks) {
+        for (auto& cd : transChunksSorted_) {
             const auto& mesh = cd.chunk->getTransparentMesh();
             VkBuffer vb[] = {mesh.vertexBuffer.buffer};
             VkDeviceSize offsets[] = {0};

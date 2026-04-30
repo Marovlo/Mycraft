@@ -11,7 +11,19 @@
 #include <cmath>
 #include <algorithm>
 #include <cstdlib>
+#include <random>
 #include "world/day_night_cycle.h"
+
+// 线程局部 RNG（替代 std::rand，线程安全且随机质量更好）
+static thread_local std::mt19937 sMobRng{std::random_device{}()};
+static int mobRandInt(int min, int max) {
+    std::uniform_int_distribution<int> dist(min, max);
+    return dist(sMobRng);
+}
+static float mobRandFloat() {
+    std::uniform_real_distribution<float> dist(0.0f, 1.0f);
+    return dist(sMobRng);
+}
 
 // 静态成员定义
 const DayNightCycle* MobEntity::sDayNight = nullptr;
@@ -297,7 +309,7 @@ void MobEntity::tick(World& world, EntityManager& mgr,
         if (props.sounds.ambient != 0xFFFF) {
             getSoundEngine().play(static_cast<SoundEventId>(props.sounds.ambient), position, 0.4f);
         }
-        ambientSoundTimer_ = 80 + (tickCount % 120);
+        ambientSoundTimer_ = 80 + mobRandInt(0, 119);
     } else {
         ambientSoundTimer_--;
     }
@@ -399,7 +411,7 @@ void MobEntity::tickAI(World& world, Player& player, EntityManager& mgr) {
         stateTimer--;
         if (stateTimer <= 0) {
             aiState = AIState::Idle;
-            stateTimer = 40 + (std::rand() % 80);
+            stateTimer = 40 + mobRandInt(0, 79);
         }
     }
 }
@@ -435,11 +447,11 @@ void MobEntity::takeDamage(int amount, const glm::vec3& knockbackDir) {
             getSoundEngine().play(static_cast<SoundEventId>(props.sounds.death), position, 0.6f);
         }
     } else {
-        // 被动生物受伤后逃跑
+    // 被动生物受伤后逃跑
         if (!props.isHostile) {
             aiState = AIState::Flee;
-            stateTimer = 60 + (std::rand() % 40);
-            panicTicks = 80 + (std::rand() % 40);
+            stateTimer = 60 + mobRandInt(0, 39);
+            panicTicks = 80 + mobRandInt(0, 39);
         }
         // 蜘蛛被攻击后标记为被激怒
         if (mobType == MobType::Spider) {
@@ -457,12 +469,11 @@ void MobEntity::spawnLoot(World& world, EntityManager& mgr) {
     for (const auto& entry : props.lootTable) {
         // 概率检查
         if (entry.chance < 1.0f) {
-            float roll = static_cast<float>(std::rand()) / static_cast<float>(RAND_MAX);
-            if (roll > entry.chance) continue;
+            if (mobRandFloat() > entry.chance) continue;
         }
         int count = entry.minCount;
         if (entry.maxCount > entry.minCount) {
-            count += std::rand() % (entry.maxCount - entry.minCount + 1);
+            count += mobRandInt(0, entry.maxCount - entry.minCount);
         }
         if (count > 0) {
             mgr.spawnItem(position + glm::vec3(0, 0.5f, 0),
@@ -473,7 +484,7 @@ void MobEntity::spawnLoot(World& world, EntityManager& mgr) {
     // 经验球掉落（数据驱动）
     int xpDrop = props.xpDropMin;
     if (props.xpDropMax > props.xpDropMin) {
-        xpDrop += std::rand() % (props.xpDropMax - props.xpDropMin + 1);
+        xpDrop += mobRandInt(0, props.xpDropMax - props.xpDropMin);
     }
     if (xpDrop > 0) {
         mgr.spawnXPOrbs(position, xpDrop);
@@ -528,7 +539,11 @@ bool MobEntity::canSeePlayer(const World& world, const Player& player) const {
     if (dist < 0.01f) return true;
     dir /= dist;
 
-    for (float t = 0.5f; t < dist; t += 0.5f) {
+    // 优化：根据距离动态调整步进大小
+    // 近距离（<8格）用 0.5 步进，远距离用 1.0 步进
+    float step = (dist > 8.0f) ? 1.0f : 0.5f;
+
+    for (float t = step; t < dist; t += step) {
         glm::vec3 p = start + dir * t;
         int bx = static_cast<int>(std::floor(p.x));
         int by = static_cast<int>(std::floor(p.y));

@@ -204,6 +204,10 @@ private:
 
     std::vector<ChunkKey> chunksToRemove_;
 
+    // 性能优化：透明区块排序缓存（避免每帧分配 vector）
+    struct ChunkDist { Chunk* chunk; float distSq; };
+    std::vector<ChunkDist> transChunksSorted_;
+
     // Auto-save: every 6000 ticks (5 minutes at 20 TPS)
     static constexpr uint64_t AUTOSAVE_INTERVAL_TICKS = 6000;
     uint64_t lastAutoSaveTick_ = 0;

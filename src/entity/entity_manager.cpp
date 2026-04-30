@@ -9,6 +9,7 @@
 #include <glm/glm.hpp>
 #include <algorithm>
 #include <cmath>
+#include <random>
 
 // MC: entities more than 128 blocks from any player despawn next tick.
 static constexpr float ENTITY_DESPAWN_DIST    = 128.0f;
@@ -60,32 +61,39 @@ void EntityManager::tick(World& world, Player& player, Inventory& inventory) {
 
     // ========== 实体碰撞推挤（MC原版行为） ==========
     // MC 使用圆柱体碰撞：XZ平面上的圆形 + Y轴高度检查
-    // 当两个实体的圆柱体重叠时，沿XZ平面推开
+    // 优化：先收集活跃生物索引，避免在 O(n²) 循环中反复检查 kind/alive
+    static thread_local std::mt19937 pushRng{42};
 
-    // 1. 生物之间的推挤
+    // 1. 收集活跃生物索引（避免在 O(n²) 内层循环中重复判断）
+    activeMobs_.clear();
     for (size_t i = 0; i < entities_.size(); i++) {
         if (!entities_[i]->alive || entities_[i]->kind() != EntityKind::Mob) continue;
-        auto& mobA = static_cast<MobEntity&>(*entities_[i]);
-        if (mobA.isDying) continue;
+        auto& mob = static_cast<MobEntity&>(*entities_[i]);
+        if (mob.isDying) continue;
+        activeMobs_.push_back(i);
+    }
 
-        for (size_t j = i + 1; j < entities_.size(); j++) {
-            if (!entities_[j]->alive || entities_[j]->kind() != EntityKind::Mob) continue;
-            auto& mobB = static_cast<MobEntity&>(*entities_[j]);
-            if (mobB.isDying) continue;
+    // 2. 生物之间的推挤（只遍历活跃生物对）
+    for (size_t ai = 0; ai < activeMobs_.size(); ai++) {
+        auto& mobA = static_cast<MobEntity&>(*entities_[activeMobs_[ai]]);
+        float radiusA = mobA.mobWidth * 0.5f;
+        float halfHA = mobA.mobHeight * 0.5f;
 
-            // 圆柱体碰撞检测（XZ平面圆形 + Y轴高度重叠）
+        for (size_t bi = ai + 1; bi < activeMobs_.size(); bi++) {
+            auto& mobB = static_cast<MobEntity&>(*entities_[activeMobs_[bi]]);
+
+            // 快速距离平方预筛选（避免 sqrt）
             float dx = mobA.position.x - mobB.position.x;
             float dz = mobA.position.z - mobB.position.z;
-            float distXZ = std::sqrt(dx * dx + dz * dz);
+            float distSqXZ = dx * dx + dz * dz;
 
-            float radiusA = mobA.mobWidth * 0.5f;
             float radiusB = mobB.mobWidth * 0.5f;
             float minDist = radiusA + radiusB;
+            float minDistSq = minDist * minDist;
 
-            if (distXZ >= minDist) continue;
+            if (distSqXZ >= minDistSq) continue;
 
-            // Y轴高度重叠检查（position是AABB中心）
-            float halfHA = mobA.mobHeight * 0.5f;
+            // Y轴高度重叠检查
             float halfHB = mobB.mobHeight * 0.5f;
             float yMinA = mobA.position.y - halfHA;
             float yMaxA = mobA.position.y + halfHA;
@@ -93,96 +101,98 @@ void EntityManager::tick(World& world, Player& player, Inventory& inventory) {
             float yMaxB = mobB.position.y + halfHB;
             if (yMaxA <= yMinB || yMaxB <= yMinA) continue;
 
-            // 计算推挤力
+            // 通过预筛选后才计算 sqrt
+            float distXZ = std::sqrt(distSqXZ);
             float overlap = minDist - distXZ;
-            float pushStrength = overlap * 0.5f;  // 每个实体推一半
+            float pushStrength = overlap * 0.5f;
 
             if (distXZ > 0.001f) {
-                float nx = dx / distXZ;
-                float nz = dz / distXZ;
-                // 尝试推开，但检查方块碰撞
+                float invDist = 1.0f / distXZ;
+                float nx = dx * invDist;
+                float nz = dz * invDist;
                 glm::vec3 newPosA = mobA.position;
                 newPosA.x += nx * pushStrength;
                 newPosA.z += nz * pushStrength;
-                if (!mobCollidesWithBlocks(world, newPosA, radiusA, mobA.mobHeight * 0.5f)) {
+                if (!mobCollidesWithBlocks(world, newPosA, radiusA, halfHA)) {
                     mobA.position = newPosA;
                 }
                 glm::vec3 newPosB = mobB.position;
                 newPosB.x -= nx * pushStrength;
                 newPosB.z -= nz * pushStrength;
-                if (!mobCollidesWithBlocks(world, newPosB, radiusB, mobB.mobHeight * 0.5f)) {
+                if (!mobCollidesWithBlocks(world, newPosB, radiusB, halfHB)) {
                     mobB.position = newPosB;
                 }
             } else {
-                // 完全重叠时随机方向推开
-                float angle = static_cast<float>(std::rand()) / static_cast<float>(RAND_MAX) * 6.2831853f;
+                // 完全重叠时随机方向推开（使用确定性 RNG 替代 std::rand）
+                std::uniform_real_distribution<float> angleDist(0.0f, 6.2831853f);
+                float angle = angleDist(pushRng);
+                float cosA = std::cos(angle), sinA = std::sin(angle);
                 glm::vec3 newPosA = mobA.position;
-                newPosA.x += std::cos(angle) * pushStrength;
-                newPosA.z += std::sin(angle) * pushStrength;
-                if (!mobCollidesWithBlocks(world, newPosA, radiusA, mobA.mobHeight * 0.5f)) {
+                newPosA.x += cosA * pushStrength;
+                newPosA.z += sinA * pushStrength;
+                if (!mobCollidesWithBlocks(world, newPosA, radiusA, halfHA)) {
                     mobA.position = newPosA;
                 }
                 glm::vec3 newPosB = mobB.position;
-                newPosB.x -= std::cos(angle) * pushStrength;
-                newPosB.z -= std::sin(angle) * pushStrength;
-                if (!mobCollidesWithBlocks(world, newPosB, radiusB, mobB.mobHeight * 0.5f)) {
+                newPosB.x -= cosA * pushStrength;
+                newPosB.z -= sinA * pushStrength;
+                if (!mobCollidesWithBlocks(world, newPosB, radiusB, halfHB)) {
                     mobB.position = newPosB;
                 }
             }
         }
     }
 
-    // 2. 生物与玩家之间的推挤
+    // 3. 生物与玩家之间的推挤（复用 activeMobs_ 列表）
     if (!player.dead) {
         float playerRadius = PLAYER_WIDTH * 0.5f;
-        float playerYMin = player.position.y;  // 玩家position是脚底
+        float playerYMin = player.position.y;
         float playerYMax = player.position.y + PLAYER_HEIGHT;
 
-        for (auto& e : entities_) {
-            if (!e->alive || e->kind() != EntityKind::Mob) continue;
-            auto& mob = static_cast<MobEntity&>(*e);
-            if (mob.isDying) continue;
+        for (size_t idx : activeMobs_) {
+            auto& mob = static_cast<MobEntity&>(*entities_[idx]);
 
             float dx = player.position.x - mob.position.x;
             float dz = player.position.z - mob.position.z;
-            float distXZ = std::sqrt(dx * dx + dz * dz);
+            float distSqXZ = dx * dx + dz * dz;
 
             float mobRadius = mob.mobWidth * 0.5f;
             float minDist = playerRadius + mobRadius;
 
-            if (distXZ >= minDist) continue;
+            if (distSqXZ >= minDist * minDist) continue;
 
-            // Y轴高度重叠检查（mob的position是AABB中心）
+            // Y轴高度重叠检查
             float halfH = mob.mobHeight * 0.5f;
             float mobYMin = mob.position.y - halfH;
             float mobYMax = mob.position.y + halfH;
             if (playerYMax <= mobYMin || mobYMax <= playerYMin) continue;
 
-            // 推挤：双方各推一半
+            float distXZ = std::sqrt(distSqXZ);
             float overlap = minDist - distXZ;
             float pushStrength = overlap * 0.5f;
 
             if (distXZ > 0.001f) {
-                float nx = dx / distXZ;
-                float nz = dz / distXZ;
-                // 推开玩家（玩家不检查方块碰撞，由Physics处理）
+                float invDist = 1.0f / distXZ;
+                float nx = dx * invDist;
+                float nz = dz * invDist;
                 player.position.x += nx * pushStrength;
                 player.position.z += nz * pushStrength;
-                // 推开生物，检查方块碰撞
                 glm::vec3 newPos = mob.position;
                 newPos.x -= nx * pushStrength;
                 newPos.z -= nz * pushStrength;
-                if (!mobCollidesWithBlocks(world, newPos, mobRadius, mob.mobHeight * 0.5f)) {
+                if (!mobCollidesWithBlocks(world, newPos, mobRadius, halfH)) {
                     mob.position = newPos;
                 }
             } else {
-                float angle = static_cast<float>(std::rand()) / static_cast<float>(RAND_MAX) * 6.2831853f;
-                player.position.x += std::cos(angle) * pushStrength;
-                player.position.z += std::sin(angle) * pushStrength;
+                std::uniform_real_distribution<float> angleDist(0.0f, 6.2831853f);
+                float angle = angleDist(pushRng);
+                float cosA = std::cos(angle), sinA = std::sin(angle);
+                player.position.x += cosA * pushStrength;
+                player.position.z += sinA * pushStrength;
                 glm::vec3 newPos = mob.position;
-                newPos.x -= std::cos(angle) * pushStrength;
-                newPos.z -= std::sin(angle) * pushStrength;
-                if (!mobCollidesWithBlocks(world, newPos, mobRadius, mob.mobHeight * 0.5f)) {
+                newPos.x -= cosA * pushStrength;
+                newPos.z -= sinA * pushStrength;
+                if (!mobCollidesWithBlocks(world, newPos, mobRadius, halfH)) {
                     mob.position = newPos;
                 }
             }

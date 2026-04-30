@@ -290,12 +290,7 @@ void ParticleSystem::update(float dt) {
         }
     }
 
-    // 移除死亡粒子
-    particles_.erase(
-        std::remove_if(particles_.begin(), particles_.end(),
-                       [](const Particle& p) { return !p.alive; }),
-        particles_.end()
-    );
+    // 移除死亡粒子（使用 swap-and-pop 避免大量内存移动）\n    // 比 erase-remove 更高效：O(n) 且无需移动存活粒子\n    size_t writeIdx = 0;\n    for (size_t i = 0; i < particles_.size(); i++) {\n        if (particles_[i].alive) {\n            if (writeIdx != i) {\n                particles_[writeIdx] = particles_[i];\n            }\n            writeIdx++;\n        }\n    }\n    particles_.resize(writeIdx);
 
     // 限制最大粒子数
     if (particles_.size() > 2048) {

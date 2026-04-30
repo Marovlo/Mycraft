@@ -271,7 +271,6 @@ void PlayerRenderer::addHeldItem3D(const std::string& tileName, const glm::mat4&
     const auto& cpuPixels = blockAtlas_->getCpuPixels();
     uint32_t tileSize = blockAtlas_->getTileSize();
     uint32_t atlasSize = blockAtlas_->getAtlasPixelSize();
-    uint32_t tilesPerRow = blockAtlas_->getTilesPerRow();
 
     if (cpuPixels.empty() || atlasSize == 0) {
         // 回退：如果没有 CPU 像素数据，渲染简单的正反面
@@ -285,119 +284,120 @@ void PlayerRenderer::addHeldItem3D(const std::string& tileName, const glm::mat4&
         return;
     }
 
-    // 计算 tile 在图集中的像素起始位置
-    uint32_t tileCol = tileIdx % tilesPerRow;
-    uint32_t tileRow = tileIdx / tilesPerRow;
-    uint32_t tilePixelX = tileCol * tileSize;
-    uint32_t tilePixelY = tileRow * tileSize;
+    // 使用缓存的像素列表（避免每帧重新扫描 256 像素）
+    const auto& pixels = getOrBuildPixelCache(tileIdx);
 
     // 每个像素在 viewmodel 空间中的尺寸
-    float pixelScale = 0.5f / static_cast<float>(tileSize);  // 总宽度 0.5 单位
-    float depth = pixelScale;  // 厚度 = 1 像素宽度（MC 原版）
+    float pixelScale = 0.5f / static_cast<float>(tileSize);
+    float depth = pixelScale;
 
     // UV 每像素步长
     float uStep = (tileUV.z - tileUV.x) / static_cast<float>(tileSize);
     float vStep = (tileUV.w - tileUV.y) / static_cast<float>(tileSize);
 
+    // 预计算变换矩阵的列向量（避免每像素做完整矩阵乘法）
+    // transform * vec4(x, y, z, 1) = col0*x + col1*y + col2*z + col3
+    glm::vec3 col0 = glm::vec3(transform[0]);
+    glm::vec3 col1 = glm::vec3(transform[1]);
+    glm::vec3 col2 = glm::vec3(transform[2]);
+    glm::vec3 col3 = glm::vec3(transform[3]);
+
     glm::mat3 N = glm::mat3(transform);
     glm::vec3 frontNormal = glm::normalize(N * glm::vec3(0, 0, -1));
     glm::vec3 backNormal = glm::normalize(N * glm::vec3(0, 0, 1));
+    glm::vec3 leftNormal = glm::normalize(N * glm::vec3(-1, 0, 0));
+    glm::vec3 rightNormal = glm::normalize(N * glm::vec3(1, 0, 0));
+    glm::vec3 upNormal = glm::normalize(N * glm::vec3(0, 1, 0));
+    glm::vec3 downNormal = glm::normalize(N * glm::vec3(0, -1, 0));
 
-    // 辅助 lambda：获取像素 RGBA
-    auto getPixel = [&](int px, int py) -> uint32_t {
+    // 预计算 depth 偏移向量
+    glm::vec3 depthOffset = col2 * depth;
+
+    for (const auto& pi : pixels) {
+        float x0 = static_cast<float>(pi.px) * pixelScale;
+        float y0 = static_cast<float>(tileSize - 1 - pi.py) * pixelScale;
+        float x1 = x0 + pixelScale;
+        float y1 = y0 + pixelScale;
+
+        // UV 坐标
+        float u0 = tileUV.x + static_cast<float>(pi.px) * uStep;
+        float v0uv = tileUV.y + static_cast<float>(pi.py) * vStep;
+        float u1 = u0 + uStep;
+        float v1uv = v0uv + vStep;
+
+        // 使用列向量计算顶点位置（比矩阵乘法快 ~3x）
+        glm::vec3 p00 = col0 * x0 + col1 * y0 + col3;  // (x0, y0, 0)
+        glm::vec3 p01 = col0 * x0 + col1 * y1 + col3;  // (x0, y1, 0)
+        glm::vec3 p10 = col0 * x1 + col1 * y0 + col3;  // (x1, y0, 0)
+        glm::vec3 p11 = col0 * x1 + col1 * y1 + col3;  // (x1, y1, 0)
+
+        // 正面 (z = 0)
+        addFace(p00, p01, p11, p10, frontNormal, u0, v0uv, u1, v1uv, light);
+
+        // 背面 (z = depth)
+        glm::vec3 bp00 = p00 + depthOffset;
+        glm::vec3 bp01 = p01 + depthOffset;
+        glm::vec3 bp10 = p10 + depthOffset;
+        glm::vec3 bp11 = p11 + depthOffset;
+        addFace(bp10, bp11, bp01, bp00, backNormal, u1, v0uv, u0, v1uv, light);
+
+        // 侧面（使用缓存的 sideFlags）
+        if (pi.sideFlags & 0x01) {  // 左侧 (-X)
+            addFace(bp00, bp01, p01, p00, leftNormal, u0, v0uv, u0 + uStep * 0.5f, v1uv, light * 0.8f);
+        }
+        if (pi.sideFlags & 0x02) {  // 右侧 (+X)
+            addFace(p10, p11, bp11, bp10, rightNormal, u1 - uStep * 0.5f, v0uv, u1, v1uv, light * 0.8f);
+        }
+        if (pi.sideFlags & 0x04) {  // 上侧 (+Y)
+            addFace(p01, bp01, bp11, p11, upNormal, u0, v0uv, u1, v0uv + vStep * 0.5f, light * 0.9f);
+        }
+        if (pi.sideFlags & 0x08) {  // 下侧 (-Y)
+            addFace(bp00, p00, p10, bp10, downNormal, u0, v1uv - vStep * 0.5f, u1, v1uv, light * 0.9f);
+        }
+    }
+}
+
+const std::vector<PlayerRenderer::PixelInfo>& PlayerRenderer::getOrBuildPixelCache(uint16_t tileIdx) {
+    auto it = itemPixelCache_.find(tileIdx);
+    if (it != itemPixelCache_.end()) return it->second;
+
+    // 首次遇到此 tile：扫描像素并缓存
+    std::vector<PixelInfo>& cache = itemPixelCache_[tileIdx];
+
+    const auto& cpuPixels = blockAtlas_->getCpuPixels();
+    uint32_t tileSize = blockAtlas_->getTileSize();
+    uint32_t atlasSize = blockAtlas_->getAtlasPixelSize();
+    uint32_t tilesPerRow = blockAtlas_->getTilesPerRow();
+
+    uint32_t tileCol = tileIdx % tilesPerRow;
+    uint32_t tileRow = tileIdx / tilesPerRow;
+    uint32_t tilePixelX = tileCol * tileSize;
+    uint32_t tilePixelY = tileRow * tileSize;
+
+    auto getAlpha = [&](int px, int py) -> uint8_t {
         if (px < 0 || py < 0 || px >= (int)tileSize || py >= (int)tileSize) return 0;
         uint32_t ax = tilePixelX + px;
         uint32_t ay = tilePixelY + py;
-        uint32_t idx = (ay * atlasSize + ax) * 4;
-        if (idx + 3 >= cpuPixels.size()) return 0;
-        uint8_t r = cpuPixels[idx];
-        uint8_t g = cpuPixels[idx + 1];
-        uint8_t b = cpuPixels[idx + 2];
-        uint8_t a = cpuPixels[idx + 3];
-        return (a << 24) | (b << 16) | (g << 8) | r;
+        uint32_t idx = (ay * atlasSize + ax) * 4 + 3;
+        if (idx >= cpuPixels.size()) return 0;
+        return cpuPixels[idx];
     };
 
-    auto isOpaque = [](uint32_t pixel) -> bool {
-        return (pixel >> 24) >= 128;  // alpha >= 128 视为不透明
-    };
-
-    // 遍历每个像素，生成正面和背面
     for (uint32_t py = 0; py < tileSize; py++) {
         for (uint32_t px = 0; px < tileSize; px++) {
-            uint32_t pixel = getPixel(px, py);
-            if (!isOpaque(pixel)) continue;
+            if (getAlpha(px, py) < 128) continue;
 
-            // 像素在 viewmodel 空间中的位置
-            // 注意：纹理 Y 轴向下，viewmodel Y 轴向上，所以翻转 Y
-            float x0 = static_cast<float>(px) * pixelScale;
-            float y0 = static_cast<float>(tileSize - 1 - py) * pixelScale;
-            float x1 = x0 + pixelScale;
-            float y1 = y0 + pixelScale;
+            uint8_t flags = 0;
+            if (getAlpha(px - 1, py) < 128) flags |= 0x01;  // 左侧
+            if (getAlpha(px + 1, py) < 128) flags |= 0x02;  // 右侧
+            if (getAlpha(px, py - 1) < 128) flags |= 0x04;  // 上侧
+            if (getAlpha(px, py + 1) < 128) flags |= 0x08;  // 下侧
 
-            // UV 坐标（对应图集中这个像素的位置）
-            float u0 = tileUV.x + static_cast<float>(px) * uStep;
-            float v0uv = tileUV.y + static_cast<float>(py) * vStep;
-            float u1 = u0 + uStep;
-            float v1uv = v0uv + vStep;
-
-            // 正面 (z = 0)
-            glm::vec3 fv0 = glm::vec3(transform * glm::vec4(x0, y0, 0, 1));
-            glm::vec3 fv1 = glm::vec3(transform * glm::vec4(x0, y1, 0, 1));
-            glm::vec3 fv2 = glm::vec3(transform * glm::vec4(x1, y1, 0, 1));
-            glm::vec3 fv3 = glm::vec3(transform * glm::vec4(x1, y0, 0, 1));
-            addFace(fv0, fv1, fv2, fv3, frontNormal, u0, v0uv, u1, v1uv, light);
-
-            // 背面 (z = depth)
-            glm::vec3 bv0 = glm::vec3(transform * glm::vec4(x1, y0, depth, 1));
-            glm::vec3 bv1 = glm::vec3(transform * glm::vec4(x1, y1, depth, 1));
-            glm::vec3 bv2 = glm::vec3(transform * glm::vec4(x0, y1, depth, 1));
-            glm::vec3 bv3 = glm::vec3(transform * glm::vec4(x0, y0, depth, 1));
-            addFace(bv0, bv1, bv2, bv3, backNormal, u1, v0uv, u0, v1uv, light);
-
-            // 侧面：只在边缘处生成（相邻像素为透明时）
-            // 使用当前像素的 UV（侧面颜色 = 边缘像素颜色）
-
-            // 左侧 (-X)
-            if (!isOpaque(getPixel(px - 1, py))) {
-                glm::vec3 lv0 = glm::vec3(transform * glm::vec4(x0, y0, depth, 1));
-                glm::vec3 lv1 = glm::vec3(transform * glm::vec4(x0, y1, depth, 1));
-                glm::vec3 lv2 = glm::vec3(transform * glm::vec4(x0, y1, 0, 1));
-                glm::vec3 lv3 = glm::vec3(transform * glm::vec4(x0, y0, 0, 1));
-                glm::vec3 n = glm::normalize(N * glm::vec3(-1, 0, 0));
-                addFace(lv0, lv1, lv2, lv3, n, u0, v0uv, u0 + uStep * 0.5f, v1uv, light * 0.8f);
-            }
-
-            // 右侧 (+X)
-            if (!isOpaque(getPixel(px + 1, py))) {
-                glm::vec3 rv0 = glm::vec3(transform * glm::vec4(x1, y0, 0, 1));
-                glm::vec3 rv1 = glm::vec3(transform * glm::vec4(x1, y1, 0, 1));
-                glm::vec3 rv2 = glm::vec3(transform * glm::vec4(x1, y1, depth, 1));
-                glm::vec3 rv3 = glm::vec3(transform * glm::vec4(x1, y0, depth, 1));
-                glm::vec3 n = glm::normalize(N * glm::vec3(1, 0, 0));
-                addFace(rv0, rv1, rv2, rv3, n, u1 - uStep * 0.5f, v0uv, u1, v1uv, light * 0.8f);
-            }
-
-            // 上侧 (+Y)
-            if (!isOpaque(getPixel(px, py - 1))) {
-                glm::vec3 tv0 = glm::vec3(transform * glm::vec4(x0, y1, 0, 1));
-                glm::vec3 tv1 = glm::vec3(transform * glm::vec4(x0, y1, depth, 1));
-                glm::vec3 tv2 = glm::vec3(transform * glm::vec4(x1, y1, depth, 1));
-                glm::vec3 tv3 = glm::vec3(transform * glm::vec4(x1, y1, 0, 1));
-                glm::vec3 n = glm::normalize(N * glm::vec3(0, 1, 0));
-                addFace(tv0, tv1, tv2, tv3, n, u0, v0uv, u1, v0uv + vStep * 0.5f, light * 0.9f);
-            }
-
-            // 下侧 (-Y)
-            if (!isOpaque(getPixel(px, py + 1))) {
-                glm::vec3 dv0 = glm::vec3(transform * glm::vec4(x0, y0, depth, 1));
-                glm::vec3 dv1 = glm::vec3(transform * glm::vec4(x0, y0, 0, 1));
-                glm::vec3 dv2 = glm::vec3(transform * glm::vec4(x1, y0, 0, 1));
-                glm::vec3 dv3 = glm::vec3(transform * glm::vec4(x1, y0, depth, 1));
-                glm::vec3 n = glm::normalize(N * glm::vec3(0, -1, 0));
-                addFace(dv0, dv1, dv2, dv3, n, u0, v1uv - vStep * 0.5f, u1, v1uv, light * 0.9f);
-            }
+            cache.push_back({static_cast<uint8_t>(px), static_cast<uint8_t>(py), flags});
         }
     }
+
+    return cache;
 }
 
 // ========== 每帧构建 ==========

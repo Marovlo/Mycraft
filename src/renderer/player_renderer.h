@@ -5,6 +5,7 @@
 #include "core/block.h"
 #include <vector>
 #include <string>
+#include <unordered_map>
 
 class Player;
 class Inventory;
@@ -88,6 +89,14 @@ private:
 
     // 渲染手持物品（3D 挤出模型 — MC 原版：每个像素都有 1px 厚度）
     void addHeldItem3D(const std::string& tileName, const glm::mat4& transform, float light);
+
+    // 性能优化：缓存每个 tile 的不透明像素列表和侧面信息
+    struct PixelInfo {
+        uint8_t px, py;       // 像素坐标
+        uint8_t sideFlags;    // bit0=左侧, bit1=右侧, bit2=上侧, bit3=下侧
+    };
+    std::unordered_map<uint16_t, std::vector<PixelInfo>> itemPixelCache_;
+    const std::vector<PixelInfo>& getOrBuildPixelCache(uint16_t tileIdx);
 
     // 辅助：添加一个面
     void addFace(glm::vec3 v0, glm::vec3 v1, glm::vec3 v2, glm::vec3 v3,
