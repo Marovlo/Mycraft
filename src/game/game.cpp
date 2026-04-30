@@ -1580,7 +1580,8 @@ void Game::updateChunks() {
             auto& chunk = world_.getOrCreateChunk(cx, cz);
 
             // 只有 Empty 状态的区块才需要提交生成任务
-            if (chunk.state() == ChunkState::Empty && !chunk.hasData()) {
+            // 多人模式下区块数据由服务器推送，不在客户端本地生成
+            if (chunk.state() == ChunkState::Empty && !chunk.hasData() && !isMultiplayer_) {
                 chunkTaskMgr_.submitGenTask(chunk);
             }
         }

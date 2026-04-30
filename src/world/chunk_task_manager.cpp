@@ -112,9 +112,9 @@ void ChunkTaskManager::submitGenTask(Chunk& chunk) {
     pool_.submitTask([this, chunkPtr, cx, cz]() {
         chunkPtr->setState(ChunkState::Generating);
 
-        // 尝试从磁盘加载
+        // 尝试从磁盘加载（多人模式下 saveManager_ 为 nullptr，跳过）
         bool fromDisk = false;
-        {
+        if (saveManager_) {
             std::lock_guard<std::mutex> lock(saveMutex_);
             fromDisk = saveManager_->loadChunk(cx, cz, *chunkPtr);
         }
