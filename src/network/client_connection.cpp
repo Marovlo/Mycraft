@@ -38,6 +38,7 @@ void ClientConnection::disconnect() {
 
     loggedIn_ = false;
     localPlayerId_ = 0;
+    hasWorldInfo_ = false;
     remotePlayers_.clear();
 }
 
@@ -228,15 +229,15 @@ void ClientConnection::handleWorldInfo(PacketBuffer& buf) {
     worldSeed_ = buf.readI64();
     serverTick_ = buf.readU64();
     uint8_t gameMode = buf.readU8();
-    glm::vec3 spawnPos = buf.readVec3();
+    spawnPos_ = buf.readVec3();
+    hasWorldInfo_ = true;
 
     std::cout << "[Client] World info: seed=" << worldSeed_
               << " tick=" << serverTick_
               << " mode=" << (int)gameMode
-              << " spawn=(" << spawnPos.x << "," << spawnPos.y << "," << spawnPos.z << ")"
+              << " spawn=(" << spawnPos_.x << "," << spawnPos_.y << "," << spawnPos_.z << ")"
               << std::endl;
     (void)gameMode;
-    (void)spawnPos;
 }
 
 void ClientConnection::handleChunkData(PacketBuffer& buf) {

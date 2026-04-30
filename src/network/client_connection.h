@@ -75,6 +75,9 @@ public:
     uint32_t getLocalPlayerId() const { return localPlayerId_; }
     int64_t getWorldSeed() const { return worldSeed_; }
     uint64_t getServerTick() const { return serverTick_; }
+    // 是否已经收到 WorldInfo 包（包含 seed / spawn 等关键信息）
+    bool hasWorldInfo() const { return hasWorldInfo_; }
+    const glm::vec3& getSpawnPosition() const { return spawnPos_; }
 
     // 获取并清空接收到的区块数据
     std::vector<ReceivedChunkData> drainChunkData();
@@ -123,6 +126,8 @@ private:
     // 世界信息
     int64_t worldSeed_ = 0;
     uint64_t serverTick_ = 0;
+    bool hasWorldInfo_ = false;
+    glm::vec3 spawnPos_{0.0f, 80.0f, 0.0f};
 
     // 接收到的区块数据队列
     std::vector<ReceivedChunkData> receivedChunks_;

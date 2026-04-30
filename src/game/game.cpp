@@ -15,6 +15,8 @@
 #include <unordered_map>
 #include <filesystem>
 #include <random>
+#include <thread>
+#include <chrono>
 
 Game::Game() = default;
 
@@ -529,7 +531,35 @@ void Game::connectToServer(const std::string& host, uint16_t port, const std::st
         return;
     }
 
-    // 连接成功，初始化客户端世界
+    // 等待服务器返回 LoginSuccess + WorldInfo（握手完成）
+    // 这两个包决定了地形生成的 seed 和玩家 spawn 位置，必须先到齐再初始化世界
+    {
+        const double timeoutSec = 10.0;
+        double start = glfwGetTime();
+        while (!clientConnection_->hasWorldInfo()) {
+            clientConnection_->update();
+            if (!clientConnection_->isConnected()) {
+                std::cerr << "[Game] Connection lost during handshake\n";
+                connectStatus_ = "Handshake failed";
+                clientConnection_.reset();
+                isMultiplayer_ = false;
+                gameState_ = GameState::ServerConnect;
+                return;
+            }
+            if (glfwGetTime() - start > timeoutSec) {
+                std::cerr << "[Game] Handshake timeout\n";
+                connectStatus_ = "Handshake timeout";
+                clientConnection_->disconnect();
+                clientConnection_.reset();
+                isMultiplayer_ = false;
+                gameState_ = GameState::ServerConnect;
+                return;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        }
+    }
+
+    // 连接成功，初始化客户端世界（使用服务器下发的 seed 保证一致性）
     worldSeed_ = clientConnection_->getWorldSeed();
     terrainGen_ = std::make_unique<OverworldGenerator>(static_cast<int>(worldSeed_));
     meshBuilder_.setTerrainGenerator(dynamic_cast<OverworldGenerator*>(terrainGen_.get()));
@@ -544,10 +574,11 @@ void Game::connectToServer(const std::string& host, uint16_t port, const std::st
         blockUpdateSystem_.notifyNeighbors(world_, x, y, z, tickClock_.getTotalTicks());
     });
 
-    // 默认出生点
-    player_.position = glm::vec3(0.5f, 80.0f, 0.5f);
-    player_.spawnPoint = player_.position;
-    prevPlayerPos_ = player_.position;
+    // 使用服务器提供的出生点
+    glm::vec3 spawn = clientConnection_->getSpawnPosition();
+    player_.position = spawn;
+    player_.spawnPoint = spawn;
+    prevPlayerPos_ = spawn;
 
     stepSoundDistance_ = 0.0f;
     digSoundTimer_ = 0;
@@ -1580,8 +1611,9 @@ void Game::updateChunks() {
             auto& chunk = world_.getOrCreateChunk(cx, cz);
 
             // 只有 Empty 状态的区块才需要提交生成任务
-            // 多人模式下区块数据由服务器推送，不在客户端本地生成
-            if (chunk.state() == ChunkState::Empty && !chunk.hasData() && !isMultiplayer_) {
+            // 多人模式下客户端也使用服务器同步的 seed 本地生成区块（弱服务器方案），
+            // 服务器通过 BlockChange 广播方块修改，保证各客户端世界一致。
+            if (chunk.state() == ChunkState::Empty && !chunk.hasData()) {
                 chunkTaskMgr_.submitGenTask(chunk);
             }
         }
