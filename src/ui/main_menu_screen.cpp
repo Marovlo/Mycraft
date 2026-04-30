@@ -112,7 +112,7 @@ void ServerConnectScreen::init(UIRenderer* ui, TextureAtlas* atlas) {
 }
 
 void ServerConnectScreen::open() {
-    addressInput_ = "localhost";
+    addressInput_ = "81.70.166.231:25566";
     nameInput_ = "Player";
     activeField_ = 0;
     hoveredButton_ = -1;
