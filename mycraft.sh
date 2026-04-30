@@ -313,7 +313,7 @@ cmd_run() {
         info "Runtime args: ${extra_args[*]}"
         echo "────────────────────────────────────────"
         cd "$BUILD_DIR"
-        exec "$(basename "$exe")" "${extra_args[@]}"
+        exec "./$(basename "$exe")" "${extra_args[@]}"
     else
         echo "────────────────────────────────────────"
         cd "$BUILD_DIR"
