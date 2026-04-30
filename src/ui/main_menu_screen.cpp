@@ -191,6 +191,14 @@ ServerConnectScreen::Result ServerConnectScreen::update(InputManager& input, flo
     if (input.hasBackspace() && !activeStr.empty()) {
         activeStr.pop_back();
     }
+    // Ctrl+A 全选清空
+    if (input.hasSelectAll()) {
+        activeStr.clear();
+    }
+    // Ctrl+C 复制到剪贴板
+    if (input.hasCopy() && !activeStr.empty()) {
+        glfwSetClipboardString(nullptr, activeStr.c_str());
+    }
 
     // Tab 切换字段
     if (input.isKeyPressed(GLFW_KEY_TAB)) {
@@ -199,11 +207,10 @@ ServerConnectScreen::Result ServerConnectScreen::update(InputManager& input, flo
         cursorVisible_ = true;
     }
 
-    // 按钮
+    // 按鈕
     float btnW = 120.0f, btnH = 28.0f;
     float btnY = screenH * 0.7f;
-    float connectBtnX = screenW * 0.5f - btnW - 10.0f;
-    float cancelBtnX = screenW * 0.5f + 10.0f;
+    float connectBtnX = screenW * 0.5f - btnW - 10.0f;    float cancelBtnX = screenW * 0.5f + 10.0f;
 
     hoveredButton_ = -1;
     if (mx >= connectBtnX && mx <= connectBtnX + btnW && my >= btnY && my <= btnY + btnH) {
@@ -801,6 +808,14 @@ CreateWorldScreen::Result CreateWorldScreen::update(InputManager& input, float s
     if (input.hasBackspace() && !activeStr.empty()) {
         activeStr.pop_back();
     }
+    // Ctrl+A 全选清空
+    if (input.hasSelectAll()) {
+        activeStr.clear();
+    }
+    // Ctrl+C 复制到剪贴板
+    if (input.hasCopy() && !activeStr.empty()) {
+        glfwSetClipboardString(nullptr, activeStr.c_str());
+    }
 
     // Tab 切换字段
     if (input.isKeyPressed(GLFW_KEY_TAB)) {
@@ -809,11 +824,10 @@ CreateWorldScreen::Result CreateWorldScreen::update(InputManager& input, float s
         cursorVisible_ = true;
     }
 
-    // 按钮
+    // 按鈕
     float btnW = 120.0f, btnH = 28.0f;
     float btnY = screenH * 0.7f;
-    float createBtnX = screenW * 0.5f - btnW - 10.0f;
-    float cancelBtnX = screenW * 0.5f + 10.0f;
+    float createBtnX = screenW * 0.5f - btnW - 10.0f;    float cancelBtnX = screenW * 0.5f + 10.0f;
 
     hoveredButton_ = -1;
     if (mx >= createBtnX && mx <= createBtnX + btnW && my >= btnY && my <= btnY + btnH) {

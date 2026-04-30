@@ -27,6 +27,8 @@ void InputManager::postUpdate() {
     enterPressed_ = false;
     arrowUpPressed_ = false;
     arrowDownPressed_ = false;
+    selectAllPressed_ = false;
+    copyPressed_ = false;
 }
 
 bool InputManager::isKeyDown(int key) const {
@@ -75,6 +77,8 @@ void InputManager::enableTextInput(bool enable) {
     enterPressed_ = false;
     arrowUpPressed_ = false;
     arrowDownPressed_ = false;
+    selectAllPressed_ = false;
+    copyPressed_ = false;
 }
 
 std::string InputManager::consumeTextInput() {
@@ -89,7 +93,7 @@ void InputManager::toggleCursorLock() {
 
 // ========== GLFW Callbacks ==========
 
-void InputManager::keyCallback(GLFWwindow* w, int key, int /*scancode*/, int action, int /*mods*/) {
+void InputManager::keyCallback(GLFWwindow* w, int key, int /*scancode*/, int action, int mods) {
     auto* input = static_cast<InputManager*>(glfwGetWindowUserPointer(w));
     if (key >= 0 && key <= GLFW_KEY_LAST) {
         input->currentKeys_[key] = (action != GLFW_RELEASE);
@@ -100,6 +104,21 @@ void InputManager::keyCallback(GLFWwindow* w, int key, int /*scancode*/, int act
         if (key == GLFW_KEY_ENTER)     input->enterPressed_ = true;
         if (key == GLFW_KEY_UP)        input->arrowUpPressed_ = true;
         if (key == GLFW_KEY_DOWN)      input->arrowDownPressed_ = true;
+        // Ctrl+V 粘贴：直接将剪贴板内容注入 textInputBuffer_
+        bool ctrl = (mods & GLFW_MOD_CONTROL) || (mods & GLFW_MOD_SUPER);
+        if (ctrl && key == GLFW_KEY_V) {
+            const char* clip = glfwGetClipboardString(w);
+            if (clip) {
+                for (const char* p = clip; *p; ++p) {
+                    unsigned char c = static_cast<unsigned char>(*p);
+                    if (c >= 32 && c < 127) {
+                        input->textInputBuffer_ += static_cast<char>(c);
+                    }
+                }
+            }
+        }
+        if (ctrl && key == GLFW_KEY_A) input->selectAllPressed_ = true;
+        if (ctrl && key == GLFW_KEY_C) input->copyPressed_ = true;
     }
 }
 

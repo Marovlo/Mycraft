@@ -50,6 +50,10 @@ public:
     // 本帧是否有上/下箭头按下（用于命令历史）
     bool hasArrowUp() const { return arrowUpPressed_; }
     bool hasArrowDown() const { return arrowDownPressed_; }
+    // 本帧是否有 Ctrl+A（全选）
+    bool hasSelectAll() const { return selectAllPressed_; }
+    // 本帧是否有 Ctrl+C（复制），返回当前活动字段内容由上层处理
+    bool hasCopy() const { return copyPressed_; }
 
 private:
     GLFWwindow* window_ = nullptr;
@@ -77,6 +81,8 @@ private:
     bool enterPressed_ = false;
     bool arrowUpPressed_ = false;
     bool arrowDownPressed_ = false;
+    bool selectAllPressed_ = false;
+    bool copyPressed_ = false;
 
     // GLFW callbacks (static, forward to instance)
     static void keyCallback(GLFWwindow* w, int key, int scancode, int action, int mods);
