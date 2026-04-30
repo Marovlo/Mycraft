@@ -55,6 +55,13 @@ public:
     // World time (wraps every 24000 ticks = 1 MC day)
     uint64_t getWorldTime() const { return totalTicks_ % 24000; }
 
+    // Reset the clock (used when entering a world to avoid tick burst)
+    void reset(double currentTime) {
+        lastTime_ = currentTime;
+        accumulator_ = 0.0;
+        partialTick_ = 0.0f;
+    }
+
 private:
     double lastTime_ = 0.0;
     double accumulator_ = 0.0;

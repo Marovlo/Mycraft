@@ -34,6 +34,9 @@ public:
     ChunkMap& chunks() { return chunks_; }
     const ChunkMap& chunks() const { return chunks_; }
 
+    // Clear all loaded chunks (used when leaving a world)
+    void clear() { chunks_.clear(); blockChangeCallback_ = nullptr; }
+
 private:
     ChunkMap chunks_;
     BlockChangeCallback blockChangeCallback_;

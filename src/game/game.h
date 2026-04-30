@@ -39,6 +39,7 @@
 #include "renderer/player_renderer.h"
 #include "entity/mob_spawner.h"
 #include "ui/game_console.h"
+#include "ui/main_menu_screen.h"
 
 #include <memory>
 #include <functional>
@@ -50,6 +51,10 @@ public:
 
     void init();
     void run();
+
+    // 世界管理：从菜单进入指定世界
+    void enterWorld(const std::string& worldName, int64_t seed);
+    void leaveWorld();  // 保存并返回菜单
 
     // Open a container screen (called by block interaction callbacks).
     void openScreen(ContainerScreen* screen);
@@ -92,6 +97,11 @@ private:
     // 控制台命令注册（game_console_cmds.cpp）
     void registerConsoleCommands();
 
+    // 游戏状态管理
+    void updateMenu(float dt);
+    void renderMenu(VkCommandBuffer cmd);
+    void deleteWorld(const std::string& worldName);
+
     // Save/Load
     void saveAll();       // Save player + dirty chunks + level data
 
@@ -123,9 +133,19 @@ private:
     // 多线程区块任务管理器
     ChunkTaskManager chunkTaskMgr_;
 
+    // 游戏状态
+    GameState        gameState_ = GameState::MainMenu;
+    bool             worldLoaded_ = false;  // 世界是否已加载
+
+    // 菜单界面
+    MainMenuScreen   mainMenuScreen_;
+    WorldSelectScreen worldSelectScreen_;
+    CreateWorldScreen createWorldScreen_;
+
     // Save system
     SaveManager      saveManager_;
     int64_t          worldSeed_ = 42;
+    std::string      savesBasePath_;  // saves/ 目录路径
 
     // GUI screens (owned by Game, activated via pointer)
     InventoryScreen  inventoryScreen_;

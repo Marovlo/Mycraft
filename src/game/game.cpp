@@ -22,7 +22,9 @@ Game::~Game() {
     chunkTaskMgr_.shutdown();
 
     // Save all data before cleanup
-    saveAll();
+    if (worldLoaded_) {
+        saveAll();
+    }
 
     for (auto& [key, chunk] : world_.chunks()) {
         if (chunk.hasMesh()) {
@@ -141,28 +143,12 @@ void Game::init() {
 
     input_.init(engine_.getWindow());
 
-    // Set up save directory (creates saves/Default World/ if needed)
-    saveManager_.setWorld("Default World");
+    // 设置 saves 基础目录
+    savesBasePath_ = "saves";
+    std::error_code ec;
+    std::filesystem::create_directories(savesBasePath_, ec);
 
-    // Try loading existing level data (seed, ticks, spawn)
-    bool hasExistingSave = false;
-    {
-        int64_t seed = worldSeed_;
-        uint64_t totalTicks = 0;
-        float spawnX = 0.5f, spawnY = 100.0f, spawnZ = 0.5f;
-        std::string name;
-        if (saveManager_.loadLevelData(seed, totalTicks, spawnX, spawnY, spawnZ, name)) {
-            worldSeed_ = seed;
-            player_.spawnPoint = glm::vec3(spawnX, spawnY, spawnZ);
-            dayNightCycle_.setTotalTicks(static_cast<uint32_t>(totalTicks));
-            hasExistingSave = true;
-            std::cout << "[Save] Loaded world \"" << name << "\" (seed=" << seed
-                      << ", ticks=" << totalTicks << ")\n";
-        }
-    }
-
-    terrainGen_ = std::make_unique<OverworldGenerator>(static_cast<int>(worldSeed_));
-
+    // 初始化渲染系统（这些与世界无关，始终需要）
     loadTextureAtlas();
     uiRenderer_.init(&engine_);
     uiRenderer_.setAtlas(&textureAtlas_);
@@ -194,19 +180,67 @@ void Game::init() {
 
     registerBlockInteractions();
 
+    // 初始化菜单界面
+    mainMenuScreen_.init(&uiRenderer_, &textureAtlas_);
+    worldSelectScreen_.init(&uiRenderer_, &textureAtlas_);
+    createWorldScreen_.init(&uiRenderer_, &textureAtlas_);
+
+    // 初始化游戏内控制台
+    console_.init(&uiRenderer_);
+    registerConsoleCommands();
+
+    // 设置引擎回调
+    engine_.onUpdate = [this](float dt) { update(dt); };
+    engine_.onRender = [this](VkCommandBuffer cmd, uint32_t) { render(cmd); };
+
+    // 启动时进入主菜单，解锁鼠标
+    gameState_ = GameState::MainMenu;
+    input_.setCursorLocked(false);
+}
+
+// ============================================================
+// 世界管理：进入/离开世界
+// ============================================================
+
+void Game::enterWorld(const std::string& worldName, int64_t seed) {
+    std::cout << "[Game] Entering world: " << worldName << " (seed=" << seed << ")\n";
+
+    worldSeed_ = seed;
+
+    // 设置存档目录
+    saveManager_.setWorld(worldName, savesBasePath_);
+
+    // 尝试加载已有存档
+    bool hasExistingSave = false;
+    {
+        int64_t loadedSeed = worldSeed_;
+        uint64_t totalTicks = 0;
+        float spawnX = 0.5f, spawnY = 100.0f, spawnZ = 0.5f;
+        std::string name;
+        if (saveManager_.loadLevelData(loadedSeed, totalTicks, spawnX, spawnY, spawnZ, name)) {
+            worldSeed_ = loadedSeed;
+            player_.spawnPoint = glm::vec3(spawnX, spawnY, spawnZ);
+            dayNightCycle_.setTotalTicks(static_cast<uint32_t>(totalTicks));
+            hasExistingSave = true;
+            std::cout << "[Save] Loaded world \"" << name << "\" (seed=" << loadedSeed
+                      << ", ticks=" << totalTicks << ")\n";
+        }
+    }
+
+    terrainGen_ = std::make_unique<OverworldGenerator>(static_cast<int>(worldSeed_));
+
     // 初始化多线程区块任务管理器
-    // numThreads=0 表示自动检测（物理核心数-1，至少2）
     chunkTaskMgr_.init(0, terrainGen_.get(), &saveManager_, &textureAtlas_);
 
-    // 初始化方块更新系统（沙子下落、水流动）
+    // 初始化方块更新系统
     blockUpdateSystem_.init();
 
-    // 设置方块变更回调：当方块被放置/破坏时通知方块更新系统
+    // 设置方块变更回调
     world_.setBlockChangeCallback([this](int x, int y, int z, BlockId oldId, BlockId newId) {
         blockUpdateSystem_.notifyNeighbors(world_, x, y, z, tickClock_.getTotalTicks());
     });
 
-    // Try loading player data from existing save
+    // 加载玩家数据
     bool playerLoaded = false;
     if (hasExistingSave) {
         playerLoaded = saveManager_.loadPlayer(player_, inventory_);
@@ -253,7 +287,7 @@ void Game::init() {
         }
     }
 
-    // New world: compute spawn point and give starter items
+    // 新世界：计算出生点并给予初始物品
     if (!playerLoaded) {
         auto* gen = dynamic_cast<OverworldGenerator*>(terrainGen_.get());
         int surfaceY = gen ? gen->getTerrainHeight(0, 0) : SEA_LEVEL;
@@ -270,12 +304,100 @@ void Game::init() {
         inventory_.getSlot(4) = {Item::Torch,          64, 0};
     }
 
-engine_.onUpdate = [this](float dt) { update(dt); };
-    engine_.onRender = [this](VkCommandBuffer cmd, uint32_t) { render(cmd); };
+    // 切换到游戏状态
+    gameState_ = GameState::Playing;
+    worldLoaded_ = true;
+    input_.setCursorLocked(true);
+    input_.enableTextInput(false);
 
-    // 初始化游戏内控制台
-    console_.init(&uiRenderer_);
-    registerConsoleCommands();
+    // 重置 tick 时钟（避免菜单时间累积导致进入世界后爆发大量 tick）
+    tickClock_.reset(glfwGetTime());
+    lastAutoSaveTick_ = tickClock_.getTotalTicks();
+
+    std::cout << "[Game] World loaded successfully.\n";
+}
+
+void Game::leaveWorld() {
+    if (!worldLoaded_) return;
+
+    std::cout << "[Game] Leaving world...\n";
+
+    // 关闭所有打开的界面
+    if (activeScreen_) {
+        closeActiveScreen();
+    }
+
+    // 保存所有数据
+    saveAll();
+
+    // 停止多线程任务
+    chunkTaskMgr_.shutdown();
+
+    // 清理世界数据
+    for (auto& [key, chunk] : world_.chunks()) {
+        if (chunk.hasMesh()) {
+            engine_.destroyMesh(chunk.getMesh());
+        }
+        if (chunk.hasTransparentMesh()) {
+            engine_.destroyMesh(chunk.getTransparentMesh());
+        }
+    }
+    world_.clear();
+
+    // 清理高亮和破坏覆盖层 mesh
+    if (targetHighlight_.indexCount > 0) {
+        engine_.destroyMesh(targetHighlight_);
+        targetHighlight_ = {};
+    }
+    if (breakOverlay_.indexCount > 0) {
+        engine_.destroyMesh(breakOverlay_);
+        breakOverlay_ = {};
+    }
+
+    // 重置实体管理器
+    entityManager_.clear();
+
+    // 重置家具管理器
+    chestManager_.clear();
+    furnaceManager_.clear();
+
+    // 重置玩家状态
+    player_ = Player();
+    inventory_ = Inventory();
+
+    // 重置其他状态
+    terrainGen_.reset();
+    hasTarget_ = false;
+    targetingMob_ = false;
+    prevTargetX_ = INT_MIN;
+    prevTargetY_ = INT_MIN;
+    prevTargetZ_ = INT_MIN;
+    prevBreakStage_ = -1;
+    blockInteraction_.reset();
+    leftMouseHeld_ = false;
+    dayNightCycle_ = DayNightCycle();
+
+    worldLoaded_ = false;
+
+    // 返回世界选择界面
+    gameState_ = GameState::WorldSelect;
+    input_.setCursorLocked(false);
+    worldSelectScreen_.refreshWorldList(savesBasePath_);
+
+    std::cout << "[Game] Returned to world select.\n";
+}
+
+void Game::deleteWorld(const std::string& worldName) {
+    std::string worldDir = savesBasePath_ + "/" + worldName;
+    std::error_code ec;
+    std::filesystem::remove_all(worldDir, ec);
+    if (ec) {
+        std::cerr << "[Game] Failed to delete world: " << ec.message() << "\n";
+    } else {
+        std::cout << "[Game] Deleted world: " << worldName << "\n";
+    }
+    // 刷新世界列表
+    worldSelectScreen_.refreshWorldList(savesBasePath_);
 }
 
 void Game::run() {
@@ -384,10 +506,7 @@ void Game::loadTextureAtlas() {
 // ============================================================
 
 void Game::update(float dt) {
-    double now = glfwGetTime();
-    int ticks = tickClock_.advance(now);
-
-    // FPS 计数器：每秒更新一次
+    // FPS 计数器：每秒更新一次（所有状态都需要）
     fpsFrameCount_++;
     fpsTimer_ += static_cast<double>(dt);
     if (fpsTimer_ >= 1.0) {
@@ -395,6 +514,17 @@ void Game::update(float dt) {
         fpsFrameCount_ = 0;
         fpsTimer_ -= 1.0;
     }
+
+    // 菜单状态：只处理菜单逻辑
+    if (gameState_ != GameState::Playing) {
+        input_.update();
+        updateMenu(dt);
+        input_.postUpdate();
+        return;
+    }
+
+    double now = glfwGetTime();
+    int ticks = tickClock_.advance(now);
 
     handleFrameInput();
 
@@ -686,7 +816,9 @@ void Game::handleGameplayInput() {
         if (input_.isCursorLocked()) {
             input_.setCursorLocked(false);
         } else {
-            glfwSetWindowShouldClose(engine_.getWindow(), GLFW_TRUE);
+            // 返回主菜单（保存并离开世界）
+            leaveWorld();
+            return;
         }
     }
 
@@ -1140,6 +1272,12 @@ void Game::unloadDistantChunks() {
 // ============================================================
 
 void Game::render(VkCommandBuffer cmd) {
+    // 菜单状态：只渲染菜单 UI
+    if (gameState_ != GameState::Playing) {
+        renderMenu(cmd);
+        return;
+    }
+
     // === Pass 0: Sky (fullscreen triangle, no depth write) ===
     skyRenderer_.render(cmd, engine_, dayNightCycle_);
 
@@ -1239,5 +1377,109 @@ void Game::render(VkCommandBuffer cmd) {
     }
 
     // === UI pass (engine switches to UI pipeline internally) ===
+    uiRenderer_.flush(cmd, engine_.getWindowWidth(), engine_.getWindowHeight());
+}
+
+// ============================================================
+// 菜单状态更新与渲染
+// ============================================================
+
+void Game::updateMenu(float dt) {
+    float sw = static_cast<float>(engine_.getWindowWidth());
+    float sh = static_cast<float>(engine_.getWindowHeight());
+
+    switch (gameState_) {
+        case GameState::MainMenu: {
+            auto action = mainMenuScreen_.update(input_, sw, sh);
+            switch (action) {
+                case MainMenuScreen::Action::SinglePlayer:
+                    gameState_ = GameState::WorldSelect;
+                    worldSelectScreen_.refreshWorldList(savesBasePath_);
+                    break;
+                case MainMenuScreen::Action::Quit:
+                    glfwSetWindowShouldClose(engine_.getWindow(), GLFW_TRUE);
+                    break;
+                default:
+                    break;
+            }
+            break;
+        }
+
+        case GameState::WorldSelect: {
+            auto result = worldSelectScreen_.update(input_, sw, sh);
+            switch (result.action) {
+                case WorldSelectScreen::Action::PlayWorld: {
+                    auto& worlds = worldSelectScreen_.getWorlds();
+                    if (result.worldIndex >= 0 && result.worldIndex < static_cast<int>(worlds.size())) {
+                        auto& world = worlds[result.worldIndex];
+                        enterWorld(world.dirName, world.seed);
+                    }
+                    break;
+                }
+                case WorldSelectScreen::Action::CreateNew:
+                    gameState_ = GameState::CreateWorld;
+                    createWorldScreen_.open();
+                    input_.enableTextInput(true);
+                    break;
+                case WorldSelectScreen::Action::DeleteWorld: {
+                    auto& worlds = worldSelectScreen_.getWorlds();
+                    if (result.worldIndex >= 0 && result.worldIndex < static_cast<int>(worlds.size())) {
+                        deleteWorld(worlds[result.worldIndex].dirName);
+                    }
+                    break;
+                }
+                case WorldSelectScreen::Action::Back:
+                    gameState_ = GameState::MainMenu;
+                    break;
+                default:
+                    break;
+            }
+            break;
+        }
+
+        case GameState::CreateWorld: {
+            auto result = createWorldScreen_.update(input_, sw, sh);
+            switch (result.action) {
+                case CreateWorldScreen::Action::Create:
+                    input_.enableTextInput(false);
+                    enterWorld(result.worldName, result.seed);
+                    break;
+                case CreateWorldScreen::Action::Cancel:
+                    input_.enableTextInput(false);
+                    gameState_ = GameState::WorldSelect;
+                    break;
+                default:
+                    break;
+            }
+            break;
+        }
+
+        default:
+            break;
+    }
+}
+
+void Game::renderMenu(VkCommandBuffer cmd) {
+    float sw = static_cast<float>(engine_.getWindowWidth());
+    float sh = static_cast<float>(engine_.getWindowHeight());
+
+    // 设置深色背景
+    engine_.setClearColor(0.1f, 0.1f, 0.15f);
+
+    switch (gameState_) {
+        case GameState::MainMenu:
+            mainMenuScreen_.draw(sw, sh);
+            break;
+        case GameState::WorldSelect:
+            worldSelectScreen_.draw(sw, sh);
+            break;
+        case GameState::CreateWorld:
+            createWorldScreen_.draw(sw, sh);
+            break;
+        default:
+            break;
+    }
+
+    // 提交 UI 渲染
     uiRenderer_.flush(cmd, engine_.getWindowWidth(), engine_.getWindowHeight());
 }
