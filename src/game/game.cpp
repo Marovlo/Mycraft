@@ -28,6 +28,7 @@ Game::~Game() {
 
     // 关闭网络连接
     if (integratedServer_) {
+        std::cout << "[DEBUG] ~Game() calling integratedServer_->stop()" << std::endl;
         integratedServer_->stop();
         integratedServer_.reset();
     }
@@ -429,6 +430,7 @@ void Game::leaveWorld() {
 
     // 关闭网络连接
     if (integratedServer_) {
+        std::cout << "[DEBUG] leaveWorld() integratedServer_->stop()" << std::endl;
         integratedServer_->stop();
         integratedServer_.reset();
     }
@@ -587,7 +589,8 @@ void Game::processNetworkSync() {
 
     // 检查连接状态
     if (!conn->isConnected()) {
-        std::cout << "[Game] Lost connection to server\n";
+        std::printf("[DEBUG] processNetworkSync: connection lost! server running=%d\n",
+                    integratedServer_ ? integratedServer_->isRunning() : -1);
         leaveWorld();
         return;
     }
@@ -768,8 +771,8 @@ void Game::update(float dt) {
 
     // 菜单状态：只处理菜单逻辑
     if (gameState_ != GameState::Playing) {
-        input_.update();
         updateMenu(dt);
+        input_.update();
         input_.postUpdate();
         return;
     }
@@ -779,12 +782,35 @@ void Game::update(float dt) {
 
     handleFrameInput();
 
+    // handleFrameInput 可能改变 gameState（比如 ESC 返回菜单）
+    if (gameState_ != GameState::Playing) {
+        input_.update();
+        input_.postUpdate();
+        return;
+    }
+
     for (int i = 0; i < ticks; i++) {
         gameTick();
     }
 
-    // 网络同步（每帧轮询）
     processNetworkSync();
+
+    // 调试：检测卡住问题
+    static int dbgFrame = 0;
+    dbgFrame++;
+    if (dbgFrame <= 30 || dbgFrame % 60 == 0) {
+        std::cout << "[F" << dbgFrame << "] ticks=" << ticks
+                  << " gs=" << static_cast<int>(gameState_)
+                  << " conn=" << (integratedServer_ ? integratedServer_->getConnection().isConnected() : false)
+                  << std::endl;
+    }
+
+    // processNetworkSync 可能调用 leaveWorld 改变 gameState
+    if (gameState_ != GameState::Playing) {
+        input_.update();
+        input_.postUpdate();
+        return;
+    }
 
     input_.update();
     input_.postUpdate();
@@ -860,8 +886,8 @@ void Game::update(float dt) {
         engine_.setClearColor(skyCol.r, skyCol.g, skyCol.b);
     }
 
-    float sw = static_cast<float>(engine_.getWindowWidth());
-    float sh = static_cast<float>(engine_.getWindowHeight());
+    float sw = static_cast<float>(engine_.getScreenCoordWidth());
+    float sh = static_cast<float>(engine_.getScreenCoordHeight());
     int   bbx, bby, bbz;
     float bProg = -1.0f;
     blockInteraction_.getActiveBreak(bbx, bby, bbz, bProg);
@@ -1104,7 +1130,15 @@ void Game::gameTick() {
     blockUpdateSystem_.tick(world_, entityManager_, player_, tickClock_.getTotalTicks());
 
     // 纹理动画（水、岩浆等帧动画）
+    static int texAnimDbg = 0;
+    texAnimDbg++;
+    if (texAnimDbg <= 10) {
+        std::cout << "[TICK" << texAnimDbg << "] texAnim begin..." << std::flush;
+    }
     textureAnimator_.tick(engine_, textureAtlas_);
+    if (texAnimDbg <= 10) {
+        std::cout << "done" << std::endl;
+    }
 
     // ===== 环境音效 =====
     tickCaveAmbient();
@@ -1177,8 +1211,8 @@ void Game::handleFrameInput() {
             closeActiveScreen();
             return;
         }
-        float sw = static_cast<float>(engine_.getWindowWidth());
-        float sh = static_cast<float>(engine_.getWindowHeight());
+        float sw = static_cast<float>(engine_.getScreenCoordWidth());
+        float sh = static_cast<float>(engine_.getScreenCoordHeight());
         activeScreen_->handleInput(inventory_, sw, sh,
                                    input_.getMouseX(), input_.getMouseY(),
                                    input_.isMouseButtonPressed(GLFW_MOUSE_BUTTON_LEFT),
@@ -1868,7 +1902,7 @@ void Game::render(VkCommandBuffer cmd) {
     }
 
     // === UI pass (engine switches to UI pipeline internally) ===
-    uiRenderer_.flush(cmd, engine_.getWindowWidth(), engine_.getWindowHeight());
+    uiRenderer_.flush(cmd, engine_.getScreenCoordWidth(), engine_.getScreenCoordHeight());
 }
 
 // ============================================================
@@ -1876,8 +1910,8 @@ void Game::render(VkCommandBuffer cmd) {
 // ============================================================
 
 void Game::updateMenu(float dt) {
-    float sw = static_cast<float>(engine_.getWindowWidth());
-    float sh = static_cast<float>(engine_.getWindowHeight());
+    float sw = static_cast<float>(engine_.getScreenCoordWidth());
+    float sh = static_cast<float>(engine_.getScreenCoordHeight());
 
     switch (gameState_) {
         case GameState::MainMenu: {
@@ -1980,8 +2014,8 @@ void Game::updateMenu(float dt) {
 }
 
 void Game::renderMenu(VkCommandBuffer cmd) {
-    float sw = static_cast<float>(engine_.getWindowWidth());
-    float sh = static_cast<float>(engine_.getWindowHeight());
+    float sw = static_cast<float>(engine_.getScreenCoordWidth());
+    float sh = static_cast<float>(engine_.getScreenCoordHeight());
 
     // 设置深色背景
     engine_.setClearColor(0.1f, 0.1f, 0.15f);
@@ -2007,5 +2041,5 @@ void Game::renderMenu(VkCommandBuffer cmd) {
     }
 
     // 提交 UI 渲染
-    uiRenderer_.flush(cmd, engine_.getWindowWidth(), engine_.getWindowHeight());
+    uiRenderer_.flush(cmd, engine_.getScreenCoordWidth(), engine_.getScreenCoordHeight());
 }

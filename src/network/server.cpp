@@ -98,12 +98,35 @@ void Server::tickLoop() {
     constexpr double TICK_DURATION = 1.0 / 20.0;  // 50ms per tick
 
     auto nextTick = Clock::now();
+    auto startTime = Clock::now();
+    int tickCount = 0;
+
+    std::printf("[SRV-TICK] Thread started\n");
 
     while (running_.load()) {
         auto now = Clock::now();
 
         if (now >= nextTick) {
-            processTick();
+            auto tickStart = Clock::now();
+            try {
+                processTick();
+            } catch (const std::exception& e) {
+                std::printf("[SRV-TICK] EXCEPTION in processTick: %s\n", e.what());
+                break;
+            } catch (...) {
+                std::printf("[SRV-TICK] UNKNOWN EXCEPTION in processTick!\n");
+                break;
+            }
+            auto tickEnd = Clock::now();
+            double tickMs = std::chrono::duration<double, std::milli>(tickEnd - tickStart).count();
+            tickCount++;
+            
+            if (tickCount <= 10 || tickMs > 20.0 || tickCount % 100 == 0) {
+                double elapsed = std::chrono::duration<double>(now - startTime).count();
+                std::printf("[SRV-TICK %d] %.1fms (t=%.1fs, clients=%u)\n",
+                            tickCount, tickMs, elapsed, network_.getClientCount());
+            }
+            
             nextTick += std::chrono::duration_cast<Clock::duration>(
                 Duration(TICK_DURATION));
 
@@ -116,10 +139,12 @@ void Server::tickLoop() {
             auto sleepMs = std::chrono::duration_cast<std::chrono::milliseconds>(
                 nextTick - now).count();
             if (sleepMs > 0) {
-                network_.pollEvents(static_cast<int>(std::min<long long>(sleepMs, 10)));
+                int waitMs = static_cast<int>(std::min<long long>(sleepMs, 10));
+                network_.pollEvents(waitMs);
             }
         }
     }
+    std::printf("[SRV-TICK] Loop exited after %d ticks (running=%d)\n", tickCount, running_.load());
 }
 
 void Server::tick() {
@@ -128,10 +153,13 @@ void Server::tick() {
 
 void Server::processTick() {
     // 1. 处理网络包
+    std::printf("[SRV] tick%llu: poll...", (unsigned long long)totalTicks_);
     network_.pollEvents(0);
+    std::printf("packets...");
     processPackets();
 
     // 2. 世界逻辑
+    std::printf("world...");
     tickBlockUpdates();
     tickEntities();
     tickDayNight();
@@ -139,6 +167,7 @@ void Server::processTick() {
     tickFurnaces();
 
     // 3. 同步实体位置给客户端
+    std::printf("sync...");
     broadcastEntityPositions();
 
     // 4. 发送区块给需要的玩家
@@ -161,6 +190,7 @@ void Server::processTick() {
     }
 
     totalTicks_++;
+    std::printf("done\n");
 }
 
 // === 网络包处理 ===
@@ -250,16 +280,18 @@ void Server::handlePlayerPosition(uint32_t senderId, PacketBuffer& buf) {
     float pitch = buf.readFloat();
     bool onGround = buf.readBool();
 
-    std::lock_guard<std::mutex> lock(playersMutex_);
-    auto it = players_.find(senderId);
-    if (it == players_.end()) return;
+    {
+        std::lock_guard<std::mutex> lock(playersMutex_);
+        auto it = players_.find(senderId);
+        if (it == players_.end()) return;
 
-    it->second.position = pos;
-    it->second.yaw = yaw;
-    it->second.pitch = pitch;
-    it->second.onGround = onGround;
+        it->second.position = pos;
+        it->second.yaw = yaw;
+        it->second.pitch = pitch;
+        it->second.onGround = onGround;
+    }
 
-    // 广播给其他玩家
+    // 广播给其他玩家（在锁外调用，避免死锁）
     broadcastPlayerPosition(senderId);
 }
 
@@ -280,15 +312,13 @@ void Server::handleBlockDig(uint32_t senderId, PacketBuffer& buf) {
     int32_t z = buf.readI32();
 
     if (action == PlayerActionType::FinishDigging) {
-        // 验证挖掘合法性（距离、方块是否可破坏等）
-        // TODO: 更严格的验证
+        // 广播方块变更给其他客户端（当前信任客户端，后续可加强验证）
+        broadcastBlockChange(x, y, z, 0);
 
-        uint8_t oldBlock = world_.getBlock(x, y, z);
-        if (oldBlock != 0) {
+        // 更新服务器世界状态（如果区块存在）
+        Chunk* chunk = world_.getChunk(x >> 4, z >> 4);
+        if (chunk) {
             world_.setBlock(x, y, z, 0);
-            broadcastBlockChange(x, y, z, 0);
-
-            // TODO: 生成掉落物实体
         }
     }
 }
@@ -299,13 +329,13 @@ void Server::handleBlockPlace(uint32_t senderId, PacketBuffer& buf) {
     int32_t z = buf.readI32();
     uint8_t blockId = buf.readU8();
 
-    // 验证放置合法性
-    // TODO: 检查玩家手中是否有该方块、距离是否合理
+    // 广播方块变更给其他客户端（当前信任客户端，后续可加强验证）
+    broadcastBlockChange(x, y, z, blockId);
 
-    uint8_t existing = world_.getBlock(x, y, z);
-    if (existing == 0) {  // 只能放在空气中
+    // 更新服务器世界状态（如果区块存在）
+    Chunk* chunk = world_.getChunk(x >> 4, z >> 4);
+    if (chunk) {
         world_.setBlock(x, y, z, blockId);
-        broadcastBlockChange(x, y, z, blockId);
     }
 }
 
@@ -374,7 +404,9 @@ void Server::sendWorldInfo(uint32_t playerId) {
 }
 
 void Server::sendChunksToPlayer(uint32_t playerId) {
-    // 注意：调用时已持有 playersMutex_
+    // 客户端使用种子同步本地生成区块（弱服务器友好方案）
+    // 服务器只跟踪玩家视距范围，用于 AOI 和方块变更广播
+    // 不再发送完整区块数据，避免服务器 tick 线程同步生成区块导致卡死
     auto it = players_.find(playerId);
     if (it == players_.end()) return;
 
@@ -382,50 +414,30 @@ void Server::sendChunksToPlayer(uint32_t playerId) {
     int pcx = static_cast<int>(std::floor(player.position.x)) >> 4;
     int pcz = static_cast<int>(std::floor(player.position.z)) >> 4;
 
-    // 每 tick 最多发送 2 个区块（避免带宽爆炸）
-    int sentThisTick = 0;
-    constexpr int MAX_CHUNKS_PER_TICK = 2;
+    // 更新玩家的已加载区块集合（用于 AOI 过滤）
+    // 清除超出视距的旧区块
+    std::vector<uint64_t> toRemove;
+    for (uint64_t key : player.loadedChunks) {
+        int cx = static_cast<int>(static_cast<uint32_t>(key >> 32));
+        int cz = static_cast<int>(static_cast<uint32_t>(key & 0xFFFFFFFF));
+        int dx = cx - pcx;
+        int dz = cz - pcz;
+        if (dx * dx + dz * dz > (player.viewDistance + 1) * (player.viewDistance + 1)) {
+            toRemove.push_back(key);
+        }
+    }
+    for (uint64_t key : toRemove) {
+        player.loadedChunks.erase(key);
+    }
 
-    for (int dx = -player.viewDistance; dx <= player.viewDistance && sentThisTick < MAX_CHUNKS_PER_TICK; dx++) {
-        for (int dz = -player.viewDistance; dz <= player.viewDistance && sentThisTick < MAX_CHUNKS_PER_TICK; dz++) {
+    // 添加视距内的新区块
+    for (int dx = -player.viewDistance; dx <= player.viewDistance; dx++) {
+        for (int dz = -player.viewDistance; dz <= player.viewDistance; dz++) {
             int cx = pcx + dx;
             int cz = pcz + dz;
-
             uint64_t key = (static_cast<uint64_t>(static_cast<uint32_t>(cx)) << 32) |
                            static_cast<uint64_t>(static_cast<uint32_t>(cz));
-
-            // 已发送过则跳过
-            if (player.loadedChunks.count(key)) continue;
-
-            // 确保区块已生成
-            Chunk* chunk = world_.getChunk(cx, cz);
-            if (!chunk) {
-                // 生成区块
-                world_.getOrCreateChunk(cx, cz);
-                chunk = world_.getChunk(cx, cz);
-                if (chunk && terrainGen_) {
-                    terrainGen_->generate(*chunk);
-                    chunk->markHasData();
-                }
-            }
-
-            if (!chunk) continue;
-
-            // 序列化区块数据并发送
-            PacketBuffer chunkBuf;
-            chunkBuf.writeI32(cx);
-            chunkBuf.writeI32(cz);
-
-            // 写入方块数据（直接写入原始数据，后续可优化为 RLE）
-            uint32_t blockCount = static_cast<uint32_t>(Chunk::blockCount());
-            chunkBuf.writeU32(blockCount);
-            chunkBuf.writeBytes(reinterpret_cast<const uint8_t*>(chunk->blocksData()),
-                               blockCount * sizeof(BlockId));
-
-            network_.sendToClient(playerId, PacketType::S2C_ChunkData, chunkBuf, NetChannel::ChunkData);
-
             player.loadedChunks.insert(key);
-            sentThisTick++;
         }
     }
 }

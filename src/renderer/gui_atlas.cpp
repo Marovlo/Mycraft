@@ -162,6 +162,32 @@ bool GuiAtlas::build(VulkanEngine& engine, const std::string& assetDir) {
                                 img.w * 4);
                 }
             }
+
+            // 在图集中预留一个 2x2 白色像素区域（用于 drawRect 纯色矩形渲染）
+            // 使用 shelf packer 分配位置，确保不与其他精灵重叠
+            auto [wpx, wpy] = packer.pack(2, 2);
+            if (wpx >= 0) {
+                for (int wy = 0; wy < 2; wy++) {
+                    for (int wx = 0; wx < 2; wx++) {
+                        int idx = ((wpy + wy) * atlasSize + (wpx + wx)) * 4;
+                        atlasPixels[idx + 0] = 255;  // R
+                        atlasPixels[idx + 1] = 255;  // G
+                        atlasPixels[idx + 2] = 255;  // B
+                        atlasPixels[idx + 3] = 255;  // A
+                    }
+                }
+                float invSize = 1.0f / static_cast<float>(atlasSize);
+                GuiSprite whiteSprite;
+                // 使用中心像素的 UV，避免边缘采样到相邻精灵
+                whiteSprite.u0 = (wpx + 0.5f) * invSize;
+                whiteSprite.v0 = (wpy + 0.5f) * invSize;
+                whiteSprite.u1 = (wpx + 1.5f) * invSize;
+                whiteSprite.v1 = (wpy + 1.5f) * invSize;
+                whiteSprite.pixelW = 2;
+                whiteSprite.pixelH = 2;
+                sprites_["_white"] = whiteSprite;
+            }
+
             packed = true;
             break;
         }

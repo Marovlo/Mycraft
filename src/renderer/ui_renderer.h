@@ -83,10 +83,17 @@ private:
     std::vector<uint32_t> guiIndices_;
 
     // Persistent dynamic buffers (CPU writable, GPU readable)
+    // 方块图集使用的 buffer
     AllocatedBuffer vertexBuffer_;
     AllocatedBuffer indexBuffer_;
     VkDeviceSize vertexBufferSize_ = 0;
     VkDeviceSize indexBufferSize_ = 0;
+
+    // GUI 图集使用的独立 buffer（避免与方块图集 buffer 竞争导致闪烁）
+    AllocatedBuffer guiVertexBuffer_;
+    AllocatedBuffer guiIndexBuffer_;
+    VkDeviceSize guiVertexBufferSize_ = 0;
+    VkDeviceSize guiIndexBufferSize_ = 0;
 
     // GUI 图集的 descriptor set（独立于方块图集）
     VkDescriptorSet guiDescriptorSet_ = VK_NULL_HANDLE;
@@ -96,6 +103,7 @@ private:
     static constexpr size_t INITIAL_INDICES = 384;
 
     void ensureBufferCapacity(size_t vertCount, size_t idxCount);
+    void ensureGuiBufferCapacity(size_t vertCount, size_t idxCount);
 
     void addQuad(float x0, float y0, float x1, float y1,
                  float u0, float v0, float u1, float v1,
@@ -106,8 +114,13 @@ private:
                     float u0, float v0, float u1, float v1,
                     const glm::vec4& color);
 
-    // 内部：渲染一批顶点/索引
+    // 内部：渲染一批顶点/索引（方块图集 buffer）
     void flushBatch(VkCommandBuffer cmd, uint32_t screenWidth, uint32_t screenHeight,
                     const std::vector<UIVertex>& verts, const std::vector<uint32_t>& idxs,
                     VkDescriptorSet descriptorSet);
+
+    // 内部：渲染一批 GUI 顶点/索引（GUI 图集独立 buffer）
+    void flushGuiBatch(VkCommandBuffer cmd, uint32_t screenWidth, uint32_t screenHeight,
+                       const std::vector<UIVertex>& verts, const std::vector<uint32_t>& idxs,
+                       VkDescriptorSet descriptorSet);
 };

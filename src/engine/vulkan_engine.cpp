@@ -1021,6 +1021,13 @@ void VulkanEngine::transitionImageLayout(VkImage image, VkFormat format, VkImage
         barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
         srcStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
         dstStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+    } else if (oldLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL && newLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
+        // 纹理动画更新：从着色器只读状态转为传输目标状态
+        // 需要等待所有片段着色器读取完成后再进行传输写入
+        barrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        srcStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+        dstStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
     } else {
         throw std::runtime_error("Unsupported layout transition");
     }

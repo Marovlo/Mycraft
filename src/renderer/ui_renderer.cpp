@@ -53,6 +53,14 @@ void UIRenderer::destroy() {
             vmaDestroyBuffer(engine_->getAllocator(), indexBuffer_.buffer, indexBuffer_.allocation);
             indexBuffer_ = {};
         }
+        if (guiVertexBuffer_.allocation) {
+            vmaDestroyBuffer(engine_->getAllocator(), guiVertexBuffer_.buffer, guiVertexBuffer_.allocation);
+            guiVertexBuffer_ = {};
+        }
+        if (guiIndexBuffer_.allocation) {
+            vmaDestroyBuffer(engine_->getAllocator(), guiIndexBuffer_.buffer, guiIndexBuffer_.allocation);
+            guiIndexBuffer_ = {};
+        }
     }
     engine_ = nullptr;
 }
@@ -76,6 +84,16 @@ void UIRenderer::addQuad(float x0, float y0, float x1, float y1,
 }
 
 void UIRenderer::drawRect(float x, float y, float w, float h, const glm::vec4& color) {
+    // 使用 GUI 图集中的白色像素精灵绘制纯色矩形
+    // 这样 drawRect 和 drawGuiSprite 在同一个渲染 Pass 中，按绘制顺序正确叠加
+    if (guiAtlas_ && guiAtlas_->isBuilt()) {
+        const auto& sp = guiAtlas_->getSprite("_white");
+        if (sp.pixelW > 0) {
+            addGuiQuad(x, y, x + w, y + h, sp.u0, sp.v0, sp.u1, sp.v1, color);
+            return;
+        }
+    }
+    // 回退：使用方块图集缓冲区（GUI 图集未就绪时）
     addQuad(x, y, x + w, y + h, 0.0f, 0.0f, 0.001f, 0.001f, color);
 }
 
@@ -273,22 +291,41 @@ void UIRenderer::ensureBufferCapacity(size_t vertCount, size_t idxCount) {
     VkDeviceSize neededVB = sizeof(UIVertex) * vertCount;
     VkDeviceSize neededIB = sizeof(uint32_t) * idxCount;
 
-    // Grow vertex buffer if needed
     if (neededVB > vertexBufferSize_) {
         if (vertexBuffer_.allocation) {
             vmaDestroyBuffer(engine_->getAllocator(), vertexBuffer_.buffer, vertexBuffer_.allocation);
         }
-        vertexBufferSize_ = neededVB * 2;  // double to amortize
+        vertexBufferSize_ = neededVB * 2;
         vertexBuffer_ = engine_->createDynamicBuffer(vertexBufferSize_, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
     }
 
-    // Grow index buffer if needed
     if (neededIB > indexBufferSize_) {
         if (indexBuffer_.allocation) {
             vmaDestroyBuffer(engine_->getAllocator(), indexBuffer_.buffer, indexBuffer_.allocation);
         }
         indexBufferSize_ = neededIB * 2;
         indexBuffer_ = engine_->createDynamicBuffer(indexBufferSize_, VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
+    }
+}
+
+void UIRenderer::ensureGuiBufferCapacity(size_t vertCount, size_t idxCount) {
+    VkDeviceSize neededVB = sizeof(UIVertex) * vertCount;
+    VkDeviceSize neededIB = sizeof(uint32_t) * idxCount;
+
+    if (neededVB > guiVertexBufferSize_) {
+        if (guiVertexBuffer_.allocation) {
+            vmaDestroyBuffer(engine_->getAllocator(), guiVertexBuffer_.buffer, guiVertexBuffer_.allocation);
+        }
+        guiVertexBufferSize_ = neededVB * 2;
+        guiVertexBuffer_ = engine_->createDynamicBuffer(guiVertexBufferSize_, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+    }
+
+    if (neededIB > guiIndexBufferSize_) {
+        if (guiIndexBuffer_.allocation) {
+            vmaDestroyBuffer(engine_->getAllocator(), guiIndexBuffer_.buffer, guiIndexBuffer_.allocation);
+        }
+        guiIndexBufferSize_ = neededIB * 2;
+        guiIndexBuffer_ = engine_->createDynamicBuffer(guiIndexBufferSize_, VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
     }
 }
 
@@ -299,6 +336,7 @@ void UIRenderer::ensureBufferCapacity(size_t vertCount, size_t idxCount) {
 void UIRenderer::flushBatch(VkCommandBuffer cmd, uint32_t screenWidth, uint32_t screenHeight,
                             const std::vector<UIVertex>& verts, const std::vector<uint32_t>& idxs,
                             VkDescriptorSet descriptorSet) {
+    // 此方法现在仅用于方块图集 Pass
     if (verts.empty()) return;
 
     ensureBufferCapacity(verts.size(), idxs.size());
@@ -318,6 +356,32 @@ void UIRenderer::flushBatch(VkCommandBuffer cmd, uint32_t screenWidth, uint32_t 
     VkDeviceSize offsets[] = {0};
     vkCmdBindVertexBuffers(cmd, 0, 1, vb, offsets);
     vkCmdBindIndexBuffer(cmd, indexBuffer_.buffer, 0, VK_INDEX_TYPE_UINT32);
+    vkCmdDrawIndexed(cmd, static_cast<uint32_t>(idxs.size()), 1, 0, 0, 0);
+}
+
+void UIRenderer::flushGuiBatch(VkCommandBuffer cmd, uint32_t screenWidth, uint32_t screenHeight,
+                               const std::vector<UIVertex>& verts, const std::vector<uint32_t>& idxs,
+                               VkDescriptorSet descriptorSet) {
+    // GUI 图集使用独立的 buffer，避免与方块图集 buffer 竞争
+    if (verts.empty()) return;
+
+    ensureGuiBufferCapacity(verts.size(), idxs.size());
+
+    void* vData = engine_->mapBuffer(guiVertexBuffer_);
+    memcpy(vData, verts.data(), sizeof(UIVertex) * verts.size());
+    engine_->unmapBuffer(guiVertexBuffer_);
+
+    void* iData = engine_->mapBuffer(guiIndexBuffer_);
+    memcpy(iData, idxs.data(), sizeof(uint32_t) * idxs.size());
+    engine_->unmapBuffer(guiIndexBuffer_);
+
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+        engine_->getUIPipelineLayout(), 0, 1, &descriptorSet, 0, nullptr);
+
+    VkBuffer vb[] = {guiVertexBuffer_.buffer};
+    VkDeviceSize offsets[] = {0};
+    vkCmdBindVertexBuffers(cmd, 0, 1, vb, offsets);
+    vkCmdBindIndexBuffer(cmd, guiIndexBuffer_.buffer, 0, VK_INDEX_TYPE_UINT32);
     vkCmdDrawIndexed(cmd, static_cast<uint32_t>(idxs.size()), 1, 0, 0, 0);
 }
 
@@ -343,23 +407,43 @@ void UIRenderer::flushWithTexture(VkCommandBuffer cmd, uint32_t screenWidth, uin
     // Switch to UI pipeline
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, engine_->getUIPipeline());
 
+    // Viewport 和 scissor 使用 framebuffer 像素尺寸（Retina 屏幕上 = 窗口坐标 × DPI 缩放）
+    uint32_t fbWidth = engine_->getWindowWidth();
+    uint32_t fbHeight = engine_->getWindowHeight();
+
     VkViewport viewport{};
-    viewport.width = static_cast<float>(screenWidth);
-    viewport.height = static_cast<float>(screenHeight);
+    viewport.width = static_cast<float>(fbWidth);
+    viewport.height = static_cast<float>(fbHeight);
     viewport.minDepth = 0.0f;
     viewport.maxDepth = 1.0f;
     vkCmdSetViewport(cmd, 0, 1, &viewport);
 
     VkRect2D scissor{};
-    scissor.extent = {screenWidth, screenHeight};
+    scissor.extent = {fbWidth, fbHeight};
     vkCmdSetScissor(cmd, 0, 1, &scissor);
 
+    // Push constants 使用窗口坐标尺寸（与 GLFW 鼠标坐标和 UI 逻辑坐标一致）
+    // UI 着色器将窗口坐标映射到 NDC [-1,1]，viewport 再将 NDC 映射到 framebuffer 像素
     UIPushConstants pc{};
     pc.screenSize = {static_cast<float>(screenWidth), static_cast<float>(screenHeight)};
     vkCmdPushConstants(cmd, engine_->getUIPipelineLayout(),
                        VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(UIPushConstants), &pc);
 
-    // Pass 1: 方块图集内容（文字、方块图标、纯色矩形等）
+    // Pass 1: GUI 图集内容（背景矩形、按钮背景、Logo、HUD 精灵等）
+    // 先渲染 GUI 背景层，确保后续的文字和方块图标能覆盖在上面
+    // 使用独立的 buffer，避免与方块图集 Pass 的 buffer 竞争导致闪烁
+    if (hasGui && guiAtlas_ && guiAtlas_->isBuilt()) {
+        if (!guiDescriptorAllocated_) {
+            guiDescriptorSet_ = engine_->allocateExtraDescriptorSet(
+                guiAtlas_->getImageView(), guiAtlas_->getSampler());
+            guiDescriptorAllocated_ = true;
+        }
+        flushGuiBatch(cmd, screenWidth, screenHeight, guiVertices_, guiIndices_,
+                      guiDescriptorSet_);
+    }
+
+    // Pass 2: 方块图集内容（文字、方块图标、纯色矩形等）
+    // 后渲染，确保文字和图标显示在 GUI 背景之上
     if (hasMain) {
         // 如果指定了自定义纹理，临时更新 descriptor
         if (textureView != VK_NULL_HANDLE && sampler != VK_NULL_HANDLE) {
@@ -367,18 +451,6 @@ void UIRenderer::flushWithTexture(VkCommandBuffer cmd, uint32_t screenWidth, uin
         }
         flushBatch(cmd, screenWidth, screenHeight, vertices_, indices_,
                    engine_->getCurrentFrame().descriptorSet);
-    }
-
-    // Pass 2: GUI 图集内容（HUD 精灵、容器背景等）
-    if (hasGui && guiAtlas_ && guiAtlas_->isBuilt()) {
-        // 为 GUI 图集分配独立的 descriptor set（只分配一次）
-        if (!guiDescriptorAllocated_) {
-            guiDescriptorSet_ = engine_->allocateExtraDescriptorSet(
-                guiAtlas_->getImageView(), guiAtlas_->getSampler());
-            guiDescriptorAllocated_ = true;
-        }
-        flushBatch(cmd, screenWidth, screenHeight, guiVertices_, guiIndices_,
-                   guiDescriptorSet_);
     }
 
     // Restore 3D pipeline

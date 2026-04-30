@@ -37,6 +37,8 @@ bool IntegratedServer::startAndConnect(const std::string& worldPath, int64_t see
 }
 
 void IntegratedServer::stop() {
+    std::cout << "[DEBUG] IntegratedServer::stop() called, conn=" 
+              << connection_.isConnected() << ", server=" << server_.isRunning() << std::endl;
     // 1. 断开客户端连接
     if (connection_.isConnected()) {
         connection_.disconnect();

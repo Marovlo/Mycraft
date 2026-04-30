@@ -117,6 +117,31 @@ public:
     uint32_t getWindowWidth() const { return windowWidth_; }
     uint32_t getWindowHeight() const { return windowHeight_; }
 
+    // 获取窗口坐标尺寸（screen coordinates，用于 UI 逻辑和鼠标坐标匹配）
+    // 在 Retina 屏幕上，窗口坐标 = framebuffer 尺寸 / content scale
+    uint32_t getScreenCoordWidth() const {
+        int w, h;
+        glfwGetWindowSize(window_, &w, &h);
+        return static_cast<uint32_t>(w);
+    }
+    uint32_t getScreenCoordHeight() const {
+        int w, h;
+        glfwGetWindowSize(window_, &w, &h);
+        return static_cast<uint32_t>(h);
+    }
+
+    // 获取 DPI 缩放因子（Retina 屏幕上通常为 2.0）
+    float getContentScaleX() const {
+        float sx, sy;
+        glfwGetWindowContentScale(window_, &sx, &sy);
+        return sx;
+    }
+    float getContentScaleY() const {
+        float sx, sy;
+        glfwGetWindowContentScale(window_, &sx, &sy);
+        return sy;
+    }
+
     // Mesh management
     Mesh uploadMesh(const std::vector<Vertex>& vertices, const std::vector<uint32_t>& indices);
     void destroyMesh(Mesh& mesh);
