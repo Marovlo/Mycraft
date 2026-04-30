@@ -72,6 +72,14 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(fastnoiselite)
 
+# ENet (UDP networking library, MIT License)
+FetchContent_Declare(
+    enet
+    GIT_REPOSITORY https://github.com/lsalzman/enet.git
+    GIT_TAG        v1.3.18
+)
+FetchContent_MakeAvailable(enet)
+
 # --- Shader compilation ---
 find_program(GLSLC glslc HINTS ${Vulkan_GLSLC_EXECUTABLE} $ENV{VULKAN_SDK}/bin)
 if(NOT GLSLC)
@@ -114,6 +122,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_SOURCE_DIR}/src
     ${stb_SOURCE_DIR}
     ${fastnoiselite_SOURCE_DIR}/Cpp
+    ${enet_SOURCE_DIR}/include
 )
 
 target_link_libraries(${PROJECT_NAME} PRIVATE
@@ -122,6 +131,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     glm::glm
     GPUOpen::VulkanMemoryAllocator
     vk-bootstrap::vk-bootstrap
+    enet
 )
 
 # macOS 和 Linux 都需要 pthread
