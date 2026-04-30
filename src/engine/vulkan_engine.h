@@ -1,5 +1,26 @@
 #pragma once
 
+// ========================================================================
+// Headless Server 构建守卫：
+// 专用服务器（MycraftServer）不进行任何渲染，但 src/world/chunk.h 仍然通过
+// Mesh 类型间接引用本头文件。为了让 Linux 纯服务器环境无需安装 Vulkan/GLFW/
+// VMA/vk-bootstrap 就能编译，当定义 MYCRAFT_HEADLESS_SERVER 时，本文件只
+// 提供 chunk.h 实际用到的最小桩定义（Mesh::indexCount），不引入任何图形库。
+// ========================================================================
+#if defined(MYCRAFT_HEADLESS_SERVER)
+
+#include <cstdint>
+
+// Chunk 只会读取 Mesh::indexCount（判断是否已生成 mesh），其它字段在服务器端不使用。
+struct AllocatedBuffer {};
+struct Mesh {
+    AllocatedBuffer vertexBuffer;
+    AllocatedBuffer indexBuffer;
+    uint32_t indexCount = 0;
+};
+
+#else  // !MYCRAFT_HEADLESS_SERVER — 完整客户端构建
+
 #include <vulkan/vulkan.h>
 #include <GLFW/glfw3.h>
 #include <VkBootstrap.h>
@@ -20,9 +41,10 @@ struct Vertex {
     glm::vec3 normal;
     glm::vec2 texCoord;
     float     light = 1.0f;  // 0.0 (dark) to 1.0 (full bright)
+    glm::vec3 color = glm::vec3(1.0f);  // Biome tint color (white = no tint)
 
     static VkVertexInputBindingDescription getBindingDescription();
-    static std::array<VkVertexInputAttributeDescription, 4> getAttributeDescriptions();
+    static std::array<VkVertexInputAttributeDescription, 5> getAttributeDescriptions();
 };
 
 // --- Uniform buffer ---
@@ -314,3 +336,5 @@ private:
     std::string pendingScreenshotPath_;
     void executeScreenshot(uint32_t imageIndex);
 };
+
+#endif // MYCRAFT_HEADLESS_SERVER

@@ -4,18 +4,20 @@
 # 将依赖安装、编译、运行整合为一个脚本，通过子命令区分功能。
 #
 # 用法:
-#   ./mycraft.sh setup              一键安装所有依赖（首次运行）
-#   ./mycraft.sh build              编译 (Release)
-#   ./mycraft.sh build --debug      编译 (Debug)
-#   ./mycraft.sh build --clean      清理后重新编译
-#   ./mycraft.sh build --jobs N     指定并行编译线程数
-#   ./mycraft.sh run                运行游戏
-#   ./mycraft.sh run --vlog         运行并启用全部调试日志
-#   ./mycraft.sh run --vlog=entity  运行并启用指定类别日志
-#   ./mycraft.sh start              编译 (Release) 并运行（默认行为）
-#   ./mycraft.sh start --debug      编译 (Debug) 并运行
-#   ./mycraft.sh server             编译并运行专用服务器
-#   ./mycraft.sh server --build     仅编译服务器
+#   ./mycraft.sh setup                  安装客户端+服务器全部依赖（首次运行）
+#   ./mycraft.sh setup --server-only    仅安装服务器依赖（无 Vulkan/GLFW，Linux headless）
+#   ./mycraft.sh build                  编译客户端 (Release)
+#   ./mycraft.sh build --debug          编译 (Debug)
+#   ./mycraft.sh build --clean          清理后重新编译
+#   ./mycraft.sh build --jobs N         指定并行编译线程数
+#   ./mycraft.sh run                    运行游戏
+#   ./mycraft.sh run --vlog             运行并启用全部调试日志
+#   ./mycraft.sh run --vlog=entity      运行并启用指定类别日志
+#   ./mycraft.sh start                  编译 (Release) 并运行（默认行为）
+#   ./mycraft.sh start --debug          编译 (Debug) 并运行
+#   ./mycraft.sh server                 编译并运行专用服务器
+#   ./mycraft.sh server --build         仅编译服务器
+#   ./mycraft.sh server --server-only   仅服务器构建（不构建客户端，无需 Vulkan/GLFW）
 #
 # 无子命令时等同于 start（编译并运行）。
 # ============================================================================
@@ -40,8 +42,20 @@ fail_no_exit() { echo -e "${RED}[FAIL]${NC}  $*"; }
 # 子命令: setup — 安装依赖
 # ============================================================================
 cmd_setup() {
+    local server_only=false
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --server-only) server_only=true; shift ;;
+            *) shift ;;
+        esac
+    done
+
     echo "============================================"
-    echo "  Mycraft — Dependency Setup"
+    if $server_only; then
+        echo "  Mycraft — Dependency Setup (server-only)"
+    else
+        echo "  Mycraft — Dependency Setup"
+    fi
     echo "============================================"
     echo ""
 
@@ -89,30 +103,43 @@ cmd_setup() {
                         info "Updating package list..."
                         sudo apt-get update -qq
                         sudo apt-get install -y --no-install-recommends \
-                            build-essential cmake git pkg-config
-                        if ! apt-cache show vulkan-sdk &>/dev/null; then
-                            info "Adding LunarG Vulkan SDK repository..."
-                            sudo apt-get install -y wget gnupg
-                            wget -qO- https://packages.lunarg.com/lunarg-signing-key-pub.asc | sudo tee /etc/apt/trusted.gpg.d/lunarg.asc >/dev/null
-                            CODENAME=$(lsb_release -cs 2>/dev/null || echo "jammy")
-                            echo "deb https://packages.lunarg.com/vulkan/ ${CODENAME} main" | sudo tee /etc/apt/sources.list.d/lunarg-vulkan.list
-                            sudo apt-get update -qq
+                            build-essential cmake git pkg-config ca-certificates
+                        if $server_only; then
+                            info "Server-only mode: skipping Vulkan / GLFW / X11 / Wayland."
+                        else
+                            if ! apt-cache show vulkan-sdk &>/dev/null; then
+                                info "Adding LunarG Vulkan SDK repository..."
+                                sudo apt-get install -y wget gnupg
+                                wget -qO- https://packages.lunarg.com/lunarg-signing-key-pub.asc | sudo tee /etc/apt/trusted.gpg.d/lunarg.asc >/dev/null
+                                CODENAME=$(lsb_release -cs 2>/dev/null || echo "jammy")
+                                echo "deb https://packages.lunarg.com/vulkan/ ${CODENAME} main" | sudo tee /etc/apt/sources.list.d/lunarg-vulkan.list
+                                sudo apt-get update -qq
+                            fi
+                            sudo apt-get install -y vulkan-sdk
+                            sudo apt-get install -y --no-install-recommends \
+                                libwayland-dev libxkbcommon-dev xorg-dev \
+                                libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev
                         fi
-                        sudo apt-get install -y vulkan-sdk
-                        sudo apt-get install -y --no-install-recommends \
-                            libwayland-dev libxkbcommon-dev xorg-dev \
-                            libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev
                         ;;
                     fedora|rhel|centos|rocky|alma)
                         sudo dnf install -y gcc gcc-c++ cmake git
-                        sudo dnf install -y vulkan-devel vulkan-tools vulkan-validation-layers-devel glslc glslang
-                        sudo dnf install -y wayland-devel libxkbcommon-devel \
-                            libX11-devel libXrandr-devel libXinerama-devel libXcursor-devel libXi-devel
+                        if $server_only; then
+                            info "Server-only mode: skipping Vulkan / GLFW / X11 / Wayland."
+                        else
+                            sudo dnf install -y vulkan-devel vulkan-tools vulkan-validation-layers-devel glslc glslang
+                            sudo dnf install -y wayland-devel libxkbcommon-devel \
+                                libX11-devel libXrandr-devel libXinerama-devel libXcursor-devel libXi-devel
+                        fi
                         ;;
                     arch|manjaro|endeavouros)
-                        sudo pacman -S --needed --noconfirm \
-                            base-devel cmake git vulkan-devel vulkan-tools vulkan-validation-layers \
-                            shaderc glslang wayland libxkbcommon libx11 libxrandr libxinerama libxcursor libxi
+                        if $server_only; then
+                            sudo pacman -S --needed --noconfirm base-devel cmake git
+                            info "Server-only mode: skipping Vulkan / GLFW / X11 / Wayland."
+                        else
+                            sudo pacman -S --needed --noconfirm \
+                                base-devel cmake git vulkan-devel vulkan-tools vulkan-validation-layers \
+                                shaderc glslang wayland libxkbcommon libx11 libxrandr libxinerama libxcursor libxi
+                        fi
                         ;;
                     *) fail "Unrecognized Linux distro: $ID" ;;
                 esac
@@ -134,7 +161,11 @@ cmd_setup() {
     echo ""
     info "Verifying installation..."
     local ok_count=0 fail_count=0
-    for cmd in cmake git glslc; do
+    local check_cmds=(cmake git)
+    if ! $server_only; then
+        check_cmds+=(glslc)
+    fi
+    for cmd in "${check_cmds[@]}"; do
         if has "$cmd"; then
             ok "$cmd: $(command -v $cmd)"
             ((ok_count++))
@@ -145,7 +176,11 @@ cmd_setup() {
     done
     echo ""
     if [ "$fail_count" -eq 0 ]; then
-        ok "All prerequisites satisfied! Run './mycraft.sh' to compile and launch."
+        if $server_only; then
+            ok "Server-only prerequisites satisfied! Run './mycraft.sh server --server-only' to build & launch."
+        else
+            ok "All prerequisites satisfied! Run './mycraft.sh' to compile and launch."
+        fi
     else
         warn "$fail_count tool(s) missing."
     fi
@@ -206,13 +241,15 @@ cmd_build() {
     local do_clean=false
     local jobs_override=""
     local target="Mycraft"
+    local server_only=false
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            --debug)  build_type="Debug"; shift ;;
-            --clean)  do_clean=true; shift ;;
-            --jobs)   jobs_override="$2"; shift 2 ;;
-            --server) target="MycraftServer"; shift ;;
+            --debug)       build_type="Debug"; shift ;;
+            --clean)       do_clean=true; shift ;;
+            --jobs)        jobs_override="$2"; shift 2 ;;
+            --server)      target="MycraftServer"; shift ;;
+            --server-only) target="MycraftServer"; server_only=true; shift ;;
             *) shift ;;
         esac
     done
@@ -231,9 +268,15 @@ cmd_build() {
     cd "$BUILD_DIR"
 
     # --- CMake 配置阶段 ---
-    info "Configuring (${build_type}, target: ${target})..."
+    local cmake_extra=()
+    if $server_only; then
+        cmake_extra+=(-DMYCRAFT_SERVER_ONLY=ON)
+        info "Configuring (${build_type}, target: ${target}, SERVER-ONLY: skip Vulkan/GLFW)..."
+    else
+        info "Configuring (${build_type}, target: ${target})..."
+    fi
     local cmake_log="${BUILD_DIR}/cmake_configure.log"
-    if cmake "$SCRIPT_DIR" -DCMAKE_BUILD_TYPE="$build_type" > "$cmake_log" 2>&1; then
+    if cmake "$SCRIPT_DIR" -DCMAKE_BUILD_TYPE="$build_type" "${cmake_extra[@]}" > "$cmake_log" 2>&1; then
         # 成功：只显示关键摘要
         grep -E "^-- (Configuring done|Generating done|Build files|Found Vulkan|Using glslc)" "$cmake_log" | while read -r line; do
             echo "  $line"
@@ -362,10 +405,11 @@ cmd_server() {
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            --build)  build_only=true; shift ;;
-            --debug)  build_args+=("--debug"); shift ;;
-            --clean)  build_args+=("--clean"); shift ;;
-            --jobs)   build_args+=("--jobs" "$2"); shift 2 ;;
+            --build)       build_only=true; shift ;;
+            --server-only) build_args=("--server-only"); shift ;;
+            --debug)       build_args+=("--debug"); shift ;;
+            --clean)       build_args+=("--clean"); shift ;;
+            --jobs)        build_args+=("--jobs" "$2"); shift 2 ;;
             *) run_args+=("$1"); shift ;;
         esac
     done
@@ -405,6 +449,9 @@ main() {
             echo "  server [options]   Build and run dedicated server"
             echo "  help               Show this help"
             echo ""
+            echo "Setup options:"
+            echo "  --server-only      Only install deps for dedicated server (no Vulkan/GLFW)"
+            echo ""
             echo "Build options:"
             echo "  --debug            Debug build (symbols, no optimization)"
             echo "  --clean            Clean build directory first"
@@ -416,6 +463,7 @@ main() {
             echo ""
             echo "Server options:"
             echo "  --build            Build server only, don't run"
+            echo "  --server-only      Build without Vulkan/GLFW deps (Linux headless)"
             exit 0
             ;;
         *)
