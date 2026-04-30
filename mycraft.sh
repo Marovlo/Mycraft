@@ -121,7 +121,7 @@ cmd_setup() {
                                 libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev
                         fi
                         ;;
-                    fedora|rhel|centos|rocky|alma)
+                    fedora|rhel|centos|rocky|alma|opencloudos|tencentos|anolis|kylin|uos)
                         sudo dnf install -y gcc gcc-c++ cmake git
                         if $server_only; then
                             info "Server-only mode: skipping Vulkan / GLFW / X11 / Wayland."
