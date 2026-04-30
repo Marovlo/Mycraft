@@ -89,10 +89,25 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(enet)
 
 # --- Shader compilation ---
-find_program(GLSLC glslc HINTS ${Vulkan_GLSLC_EXECUTABLE} $ENV{VULKAN_SDK}/bin)
-if(NOT GLSLC)
-    message(FATAL_ERROR "glslc not found! Install the Vulkan SDK.")
+# 优先使用 find_package(Vulkan) 已经找到的 glslc
+if(Vulkan_GLSLC_EXECUTABLE)
+    set(GLSLC "${Vulkan_GLSLC_EXECUTABLE}")
+else()
+    find_program(GLSLC glslc
+        HINTS
+            $ENV{VULKAN_SDK}/bin
+            /opt/homebrew/bin      # macOS Apple Silicon (Homebrew)
+            /usr/local/bin         # macOS Intel (Homebrew)
+    )
 endif()
+if(NOT GLSLC)
+    message(FATAL_ERROR
+        "glslc not found! Please install the Vulkan SDK:\n"
+        "  macOS:  brew install vulkan-sdk\n"
+        "  Linux:  sudo apt install vulkan-sdk  (or see https://vulkan.lunarg.com)\n"
+        "  Or run: ./mycraft.sh setup")
+endif()
+message(STATUS "Using glslc: ${GLSLC}")
 
 file(GLOB_RECURSE SHADER_SOURCES
     "${CMAKE_SOURCE_DIR}/src/shaders/*.vert"
