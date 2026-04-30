@@ -160,6 +160,10 @@ public:
     int fuseTimer = 0;         // 爆炸倒计时 (30 ticks = 1.5s)
     bool ignited = false;
 
+    // 骷髅拉弓蓄力（MC 原版：骷髅射箭前有 20 tick 蓄力动画）
+    int bowChargeTicks = 0;    // 当前蓄力 tick 数（0 = 未蓄力）
+    bool isChargingBow = false; // 是否正在拉弓
+
     // 受击加速：被攻击后一段时间内加速移动和摆腿
     int panicTicks = 0;        // 受击恐慌剩余tick数（被动生物用）
 

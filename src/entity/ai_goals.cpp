@@ -269,20 +269,49 @@ void MeleeAttackGoal::tick(MobEntity& mob, World&, Player& player, EntityManager
 // ========== RangedAttackGoal ==========
 
 void RangedAttackGoal::tick(MobEntity& mob, World&, Player& player, EntityManager& mgr) {
-    // 骷髅射箭
-    glm::vec3 eyePos = mob.position + glm::vec3(0, mob.mobHeight * 0.4f, 0);
-    glm::vec3 targetPos = player.position + glm::vec3(0, 1.0f, 0);
-    glm::vec3 dir = targetPos - eyePos;
-    float horizDist = std::sqrt(dir.x * dir.x + dir.z * dir.z);
-    float arrowSpeed = 1.6f;
-    float flightTime = horizDist / arrowSpeed;
-    dir.y += 0.5f * ArrowEntity::GRAVITY * flightTime;
-    dir = glm::normalize(dir);
+    // MC 原版骷髅射箭行为：
+    // 1. 进入攻击范围后开始蓄力（举起弓，手臂抬起动画）
+    // 2. 蓄力 20 tick（1 秒）
+    // 3. 蓄力完成后射出箭矢
+    // 4. 进入攻击冷却
 
-    mgr.spawnArrow(eyePos, dir, arrowSpeed, static_cast<int>(mob.attackDamage), false);
+    static constexpr int SKELETON_CHARGE_TICKS = 20;  // MC 原版蓄力时间
 
-    const auto& props = MobRegistry::instance().get(mob.mobType);
-    mob.attackCooldown = props.attackCooldownTicks;
+    // 开始蓄力
+    if (!mob.isChargingBow) {
+        mob.isChargingBow = true;
+        mob.bowChargeTicks = 0;
+    }
+
+    // 蓄力中：递增计数器
+    mob.bowChargeTicks++;
+
+    // 蓄力期间面向玩家
+    glm::vec3 toPlayer = player.position - mob.position;
+    float targetYaw = std::atan2(toPlayer.x, toPlayer.z);
+    mob.bodyYaw = targetYaw;
+    mob.headYaw = targetYaw;
+
+    // 蓄力完成：射出箭矢
+    if (mob.bowChargeTicks >= SKELETON_CHARGE_TICKS) {
+        glm::vec3 eyePos = mob.position + glm::vec3(0, mob.mobHeight * 0.4f, 0);
+        glm::vec3 targetPos = player.position + glm::vec3(0, 1.0f, 0);
+        glm::vec3 dir = targetPos - eyePos;
+        float horizDist = std::sqrt(dir.x * dir.x + dir.z * dir.z);
+        float arrowSpeed = 1.6f;
+        float flightTime = horizDist / arrowSpeed;
+        dir.y += 0.5f * ArrowEntity::GRAVITY * flightTime;
+        dir = glm::normalize(dir);
+
+        mgr.spawnArrow(eyePos, dir, arrowSpeed, static_cast<int>(mob.attackDamage), false);
+
+        // 重置蓄力状态
+        mob.isChargingBow = false;
+        mob.bowChargeTicks = 0;
+
+        const auto& props = MobRegistry::instance().get(mob.mobType);
+        mob.attackCooldown = props.attackCooldownTicks;
+    }
 }
 
 // ========== CreeperExplodeGoal ==========

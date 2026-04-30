@@ -74,6 +74,7 @@ private:
     void handleTickInput();
     void handleGameplayInput();
     void handleRightClick();
+    void releaseBow();  // 松开弓：射出箭矢
     void updateChunks();
     void buildMeshes();
     void unloadDistantChunks();

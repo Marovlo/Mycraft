@@ -48,6 +48,20 @@ public:
     int  eatingTicks = 0;     // ticks spent eating, 0 = not eating
     bool isEating    = false;
 
+    // ===== 弓蓄力系统（MC 原版） =====
+    // 右键持弓蓄力，松开射箭。蓄力时间影响箭矢速度和伤害。
+    bool isChargingBow   = false;  // 是否正在蓄力
+    int  bowChargeTicks  = 0;      // 当前蓄力 tick 数（0~20 满蓄力）
+    static constexpr int BOW_MAX_CHARGE = 20;  // 满蓄力 tick 数（MC 原版 = 20 tick = 1 秒）
+
+    // MC 原版弓蓄力公式：chargeRatio = min(ticks/20, 1.0)
+    // 箭矢速度 = chargeRatio * (chargeRatio + 2) / 3 * 3.0
+    // 最小蓄力 3 tick 才能射出箭矢
+    float getBowChargeRatio() const;
+    float getBowArrowSpeed() const;   // blocks/tick
+    int   getBowArrowDamage() const;  // 基础伤害（不含随机）
+    bool  canReleaseBow() const;      // 蓄力 >= 3 tick 才能射出
+
     // Attack cooldown (MC Java 1.9+). Full strength after cooldown expires.
     int attackCooldownTicks    = 0;
     int attackCooldownMax      = 10;
@@ -70,6 +84,8 @@ public:
     void startSwing();
     // 每 tick 更新挥动状态
     void tickSwing();
+    // 每 tick 更新弓蓄力状态
+    void tickBowCharge();
 
     // 经验值系统（MC 原版）
     int  xpLevel      = 0;     // 当前等级

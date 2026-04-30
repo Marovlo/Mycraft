@@ -110,6 +110,42 @@ void Player::tickSwing() {
     }
 }
 
+// ========== 弓蓄力系统（MC 原版） ==========
+
+void Player::tickBowCharge() {
+    if (isChargingBow) {
+        if (bowChargeTicks < BOW_MAX_CHARGE) {
+            ++bowChargeTicks;
+        }
+    }
+}
+
+float Player::getBowChargeRatio() const {
+    // MC 原版：chargeRatio = min(ticks / 20.0, 1.0)
+    return std::min(static_cast<float>(bowChargeTicks) / static_cast<float>(BOW_MAX_CHARGE), 1.0f);
+}
+
+float Player::getBowArrowSpeed() const {
+    // MC 原版公式：speed = chargeRatio * (chargeRatio + 2) / 3 * 3.0
+    // 最大速度 = 1.0 * 3.0 / 3.0 * 3.0 = 3.0 blocks/tick
+    float ratio = getBowChargeRatio();
+    return ratio * (ratio + 2.0f) / 3.0f * 3.0f;
+}
+
+int Player::getBowArrowDamage() const {
+    // MC 原版：damage = floor(speed² + 0.5)
+    // 满蓄力 speed=3.0 → damage = floor(9.0 + 0.5) = 9
+    // 最小蓄力 speed≈0.45 → damage = floor(0.2 + 0.5) = 0 → 最低 1
+    float speed = getBowArrowSpeed();
+    int dmg = static_cast<int>(std::floor(speed * speed + 0.5f));
+    return std::max(dmg, 1);
+}
+
+bool Player::canReleaseBow() const {
+    // MC 原版：蓄力至少 3 tick 才能射出箭矢
+    return bowChargeTicks >= 3;
+}
+
 // ========== 经验值系统（MC 原版公式） ==========
 
 int Player::xpForLevel(int level) const {

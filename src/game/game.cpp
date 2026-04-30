@@ -14,6 +14,7 @@
 #include "world/light_engine.h"
 #include <unordered_map>
 #include <filesystem>
+#include <random>
 
 Game::Game() = default;
 
@@ -730,6 +731,8 @@ void Game::gameTick() {
 
     // 第一人称手臂挥动动画 tick
     player_.tickSwing();
+    // 弓蓄力 tick
+    player_.tickBowCharge();
 
     // 昼夜循环 — 使用 tick clock 的总 tick 数驱动
     dayNightCycle_.setTime(static_cast<uint32_t>(tickClock_.getTotalTicks() % 24000));
@@ -1038,6 +1041,11 @@ void Game::handleGameplayInput() {
         player_.isEating = false;
         player_.eatingTicks = 0;
     }
+
+    // 弓蓄力：松开右键时射箭
+    if (player_.isChargingBow && !input_.isMouseButtonDown(GLFW_MOUSE_BUTTON_RIGHT)) {
+        releaseBow();
+    }
 }
 
 void Game::handleRightClick() {
@@ -1054,11 +1062,29 @@ void Game::handleRightClick() {
         }
     }
 
-    // Eat or place
+    // Eat, use bow, or place
     const ItemStack& held = inventory_.getHeldItem();
     if (held.isEmpty()) return;
 
     const auto& itemProps = ItemRegistry::instance().get(held.id);
+
+    // MC 原版：右键持弓开始蓄力（需要背包中有箭矢）
+    if (held.id == Item::Bow && !player_.isChargingBow) {
+        // 检查背包中是否有箭矢
+        bool hasArrow = false;
+        for (int i = 0; i < Inventory::TOTAL_SLOTS; ++i) {
+            if (inventory_.getSlot(i).id == Item::Arrow && inventory_.getSlot(i).count > 0) {
+                hasArrow = true;
+                break;
+            }
+        }
+        if (hasArrow) {
+            player_.isChargingBow = true;
+            player_.bowChargeTicks = 0;
+        }
+        return;
+    }
+
     if (itemProps.type == ItemType::Food && player_.hunger < player_.maxHunger) {
         player_.isEating = true;
         player_.eatingTicks = 0;
@@ -1077,6 +1103,58 @@ void Game::handleRightClick() {
             getSoundEngine().playBlockPlace(mat, blockCenter);
         }
     }
+}
+
+void Game::releaseBow() {
+    // MC 原版：松开右键时射出箭矢
+    player_.isChargingBow = false;
+
+    if (!player_.canReleaseBow()) {
+        // 蓄力不足 3 tick，不射箭
+        player_.bowChargeTicks = 0;
+        return;
+    }
+
+    // 计算箭矢参数（MC 原版公式）
+    float arrowSpeed = player_.getBowArrowSpeed();
+    int arrowDamage = player_.getBowArrowDamage();
+    float chargeRatio = player_.getBowChargeRatio();
+
+    // 消耗一支箭矢
+    inventory_.consumeItem(Item::Arrow, 1);
+
+    // 从玩家眼睛位置沿视线方向射出
+    glm::vec3 eyePos = player_.getEyePosition();
+    glm::vec3 dir = player_.getForward();
+
+    // MC 原版：箭矢有轻微随机偏移（非满蓄力时偏移更大）
+    // 满蓄力时精准无偏移
+    if (chargeRatio < 1.0f) {
+        // 非满蓄力：添加少量随机散布
+        static thread_local std::mt19937 rng(std::random_device{}());
+        std::uniform_real_distribution<float> spread(-0.0075f, 0.0075f);
+        float spreadFactor = (1.0f - chargeRatio) * 2.0f;
+        dir.x += spread(rng) * spreadFactor;
+        dir.y += spread(rng) * spreadFactor;
+        dir.z += spread(rng) * spreadFactor;
+        dir = glm::normalize(dir);
+    }
+
+    // 生成箭矢实体
+    entityManager_.spawnArrow(eyePos, dir, arrowSpeed, arrowDamage, true);
+
+    // MC 原版：满蓄力箭矢为暴击箭（粒子效果 + 额外伤害在 ArrowEntity 中处理）
+    // 这里通过 speed >= 3.0 来标识暴击
+
+    // 消耗弓耐久
+    inventory_.getHeldItem().useDurability(1, 384);
+    if (inventory_.getHeldItem().durability == 0 && inventory_.getHeldItem().id == Item::Bow) {
+        // 弓损坏
+        inventory_.consumeHeldItem(1);
+        getSoundEngine().play(SoundEventId::GlassBreak, player_.position, 0.8f);
+    }
+
+    player_.bowChargeTicks = 0;
 }
 
 void Game::handleTickInput() {

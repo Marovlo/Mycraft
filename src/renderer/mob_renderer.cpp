@@ -420,15 +420,28 @@ void MobRenderer::appendMobMesh(const MobEntity& mob, float partialTick, float s
 
         // 手臂
         if (model.hasArms) {
+            // MC 原版：骷髅拉弓时右臂举起指向玩家方向
+            float leftArmSwing = -legSwing * 0.5f;
+            float rightArmSwing = legSwing * 0.5f;
+
+            // 骷髅拉弓动画：右臂举起（绕 X 轴旋转 -90°，指向前方）
+            if (mob.isChargingBow) {
+                float chargeRatio = std::min(static_cast<float>(mob.bowChargeTicks) / 20.0f, 1.0f);
+                // 右臂从自然下垂逐渐举起到水平（-90°）
+                rightArmSwing = -1.5708f * chargeRatio;  // -π/2
+                // 左臂也略微抬起（辅助手拉弦）
+                leftArmSwing = -1.2f * chargeRatio;
+            }
+
             glm::mat4 leftArm = root;
             leftArm = glm::translate(leftArm, model.armLeft.pivot);
-            leftArm = glm::rotate(leftArm, -legSwing * 0.5f, glm::vec3(1, 0, 0));
+            leftArm = glm::rotate(leftArm, leftArmSwing, glm::vec3(1, 0, 0));
             leftArm = glm::translate(leftArm, -model.armLeft.pivot);
             addCuboid(model.armLeft, texReg, model.texWidth, model.texHeight, leftArm, light);
 
             glm::mat4 rightArm = root;
             rightArm = glm::translate(rightArm, model.armRight.pivot);
-            rightArm = glm::rotate(rightArm, legSwing * 0.5f, glm::vec3(1, 0, 0));
+            rightArm = glm::rotate(rightArm, rightArmSwing, glm::vec3(1, 0, 0));
             rightArm = glm::translate(rightArm, -model.armRight.pivot);
             addCuboid(model.armRight, texReg, model.texWidth, model.texHeight, rightArm, light);
         }

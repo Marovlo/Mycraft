@@ -65,7 +65,10 @@ struct RangedAttackGoal : AIGoal {
 
     bool canUse(const MobEntity& mob, const World&, const Player& player) const override {
         float dist = glm::length(mob.position - player.position);
-        return mob.aiState == AIState::Chase && dist <= mob.attackRange && mob.attackCooldown <= 0;
+        // MC 原版：骷髅在攻击范围内且攻击冷却结束时可以开始蓄力
+        // 或者已经在蓄力中（继续蓄力直到射出）
+        return mob.aiState == AIState::Chase && dist <= mob.attackRange &&
+               (mob.attackCooldown <= 0 || mob.isChargingBow);
     }
 
     void tick(MobEntity& mob, World& world, Player& player, EntityManager& mgr) override;

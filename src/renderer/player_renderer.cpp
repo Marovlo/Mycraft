@@ -473,6 +473,33 @@ void PlayerRenderer::buildFrame(const Player& player, const Inventory& inventory
         eatRotation = jitterX + jitterY;
     }
 
+    // ===== 拉弓动画（MC 原版） =====
+    // 拉弓时手臂移到屏幕中央偏左，弓拉满时有轻微抖动
+    float bowTransX = 0.0f;
+    float bowTransY = 0.0f;
+    float bowTransZ = 0.0f;
+    float bowRotation = 0.0f;
+    bool isBowCharging = player.isChargingBow && held.id == Item::Bow;
+
+    if (isBowCharging) {
+        float chargeRatio = player.getBowChargeRatio();
+
+        // MC 原版：拉弓时手臂移到屏幕中央（向左+向上）
+        bowTransX = -0.3f * chargeRatio;   // 向左移动
+        bowTransY = 0.2f * chargeRatio;    // 向上抬起
+        bowTransZ = -0.1f * chargeRatio;   // 略微前伸
+
+        // MC 原版：满蓄力时有轻微抖动（表示张力）
+        if (chargeRatio >= 0.9f) {
+            float trembleFreq = static_cast<float>(player.bowChargeTicks) + partialTick;
+            bowTransX += std::sin(trembleFreq * 7.0f) * 0.005f;
+            bowTransY += std::cos(trembleFreq * 8.3f) * 0.005f;
+        }
+
+        // 弓的旋转：拉弓时弓稍微向左旋转
+        bowRotation = -0.3f * chargeRatio;
+    }
+
     // ===== 组合变换 =====
     // viewmodel 的顶点需要在世界空间中生成（因为着色器使用 proj * view * model * pos）
     // 策略：先在相机局部空间中定义 viewmodel，然后用 view 矩阵的逆矩阵转换到世界空间
@@ -482,9 +509,9 @@ void PlayerRenderer::buildFrame(const Player& player, const Inventory& inventory
 
     // 基础位置（相机空间中的偏移）
     viewmodel = viewmodel * glm::translate(glm::mat4(1.0f), glm::vec3(
-        baseX + swingTransX + eatTransX,
-        baseY + swingTransY + eatTransY,
-        baseZ + swingTransZ + eatTransZ
+        baseX + swingTransX + eatTransX + bowTransX,
+        baseY + swingTransY + eatTransY + bowTransY,
+        baseZ + swingTransZ + eatTransZ + bowTransZ
     ));
 
     // 挥动旋转（在相机空间中）
@@ -496,6 +523,11 @@ void PlayerRenderer::buildFrame(const Player& player, const Inventory& inventory
     // 吃东西旋转（在相机空间中）
     if (eatRotation != 0.0f) {
         viewmodel = viewmodel * glm::rotate(glm::mat4(1.0f), eatRotation, glm::vec3(0, 0, 1));
+    }
+
+    // 拉弓旋转（在相机空间中）
+    if (bowRotation != 0.0f) {
+        viewmodel = viewmodel * glm::rotate(glm::mat4(1.0f), bowRotation, glm::vec3(0, 1, 0));
     }
 
     // ===== 渲染手臂 =====
@@ -536,11 +568,29 @@ void PlayerRenderer::buildFrame(const Player& player, const Inventory& inventory
         } else if (!itemProps.iconTileName.empty()) {
             // 工具/食物/材料：渲染 3D 挤出模型（MC 原版：每个像素都有厚度）
             glm::mat4 spriteTransform = itemTransform;
+
+            // MC 原版：弓在拉弓时使用不同的蓄力贴图
+            std::string tileName = itemProps.iconTileName;
+            if (isBowCharging && held.id == Item::Bow) {
+                float chargeRatio = player.getBowChargeRatio();
+                // MC 原版弓蓄力贴图切换：
+                // 0~0.33: bow_pulling_0
+                // 0.33~0.66: bow_pulling_1
+                // 0.66~1.0: bow_pulling_2
+                if (chargeRatio >= 0.66f) {
+                    tileName = "item_bow_pulling_2";
+                } else if (chargeRatio >= 0.33f) {
+                    tileName = "item_bow_pulling_1";
+                } else {
+                    tileName = "item_bow_pulling_0";
+                }
+            }
+
             // MC 原版工具在手中是斜着拿的（约 -45° 绕 Z 轴 + 30° 绕 Y 轴）
             spriteTransform = glm::rotate(spriteTransform, glm::radians(-45.0f), glm::vec3(0, 0, 1));
             spriteTransform = glm::rotate(spriteTransform, glm::radians(30.0f), glm::vec3(0, 1, 0));
             spriteTransform = glm::translate(spriteTransform, glm::vec3(-0.1f, -0.15f, 0.0f));
-            addHeldItem3D(itemProps.iconTileName, spriteTransform, light);
+            addHeldItem3D(tileName, spriteTransform, light);
         }
     }
     itemIndexCount_ = static_cast<uint32_t>(indices_.size()) - itemIndexStart_;
