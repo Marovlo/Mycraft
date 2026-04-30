@@ -4,6 +4,7 @@ layout(location = 0) in vec3 fragNormal;
 layout(location = 1) in vec2 fragTexCoord;
 layout(location = 2) in vec3 fragWorldPos;
 layout(location = 3) in float fragLight;
+layout(location = 4) in vec3 fragColor;
 
 layout(location = 0) out vec4 outColor;
 
@@ -46,6 +47,9 @@ void main() {
     }
 
     vec4 texColor = texture(texSampler, fragTexCoord);
+
+    // 应用生物群系 tint 颜色（白色 = 不着色）
+    texColor.rgb *= fragColor;
 
     // Alpha test for cutout rendering (destroy overlay, foliage, cross plants)
     // Skip for water faces (they use alpha blending instead)

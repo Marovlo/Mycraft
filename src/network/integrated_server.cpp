@@ -1,4 +1,5 @@
 #include "network/integrated_server.h"
+#include "core/debug.h"
 
 #include <iostream>
 #include <thread>
@@ -37,8 +38,8 @@ bool IntegratedServer::startAndConnect(const std::string& worldPath, int64_t see
 }
 
 void IntegratedServer::stop() {
-    std::cout << "[DEBUG] IntegratedServer::stop() called, conn=" 
-              << connection_.isConnected() << ", server=" << server_.isRunning() << std::endl;
+    VLOG(DebugCat::Network, "IntegratedServer::stop() called, conn=%d, server=%d",
+         connection_.isConnected(), server_.isRunning());
     // 1. 断开客户端连接
     if (connection_.isConnected()) {
         connection_.disconnect();

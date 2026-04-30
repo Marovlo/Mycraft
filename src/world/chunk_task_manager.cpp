@@ -1,15 +1,18 @@
 #include "chunk_task_manager.h"
 #include "world/light_engine.h"
+#include "world/biome_colormap.h"
 #include "core/debug.h"
 
 #include <algorithm>
 #include <cassert>
 
 void ChunkTaskManager::init(int numThreads, TerrainGenerator* terrainGen,
-                            SaveManager* saveManager, const TextureAtlas* atlas) {
+                            SaveManager* saveManager, const TextureAtlas* atlas,
+                            const BiomeColorMap* biomeColorMap) {
     terrainGen_ = terrainGen;
     saveManager_ = saveManager;
     atlas_ = atlas;
+    biomeColorMap_ = biomeColorMap;
 
     pool_.init(numThreads);
 
@@ -20,6 +23,8 @@ void ChunkTaskManager::init(int numThreads, TerrainGenerator* terrainGen,
     for (int i = 0; i < poolSize; ++i) {
         meshBuilderPool_[i] = std::make_unique<MeshBuilder>();
         meshBuilderPool_[i]->setAtlas(atlas_);
+        meshBuilderPool_[i]->setBiomeColorMap(biomeColorMap_);
+        meshBuilderPool_[i]->setTerrainGenerator(dynamic_cast<OverworldGenerator*>(terrainGen_));
     }
 
     VLOG(DebugCat::General, "ChunkTaskManager: initialized with %d worker threads", poolSize);
@@ -69,6 +74,8 @@ MeshBuilder* ChunkTaskManager::acquireMeshBuilder() {
     // 所有 builder 都在使用中 — 动态扩展（不应该发生，但安全起见）
     auto newBuilder = std::make_unique<MeshBuilder>();
     newBuilder->setAtlas(atlas_);
+    newBuilder->setBiomeColorMap(biomeColorMap_);
+    newBuilder->setTerrainGenerator(dynamic_cast<OverworldGenerator*>(terrainGen_));
     MeshBuilder* ptr = newBuilder.get();
     meshBuilderPool_.push_back(std::move(newBuilder));
     meshBuilderInUse_.push_back(true);

@@ -24,7 +24,7 @@ void MobRenderer::registerModels() {
     // 身体在Java中是竖直定义后旋转90度变水平，所以3D尺寸(10,8,16)但UV用(10,16,8)
     {
         auto& pig = models_[static_cast<int>(MobType::Pig)];
-        pig.type = MobType::Pig; pig.textureName = "pig"; pig.texWidth = 64; pig.texHeight = 32;
+        pig.type = MobType::Pig; pig.textureName = "pig"; pig.texWidth = 64; pig.texHeight = 64;
         // 身体：3D空间 宽10 高8 长16，UV展开用 sx=10 sy=16 sz=8
         pig.body = {{-5, 7, -8}, {10, 8, 16}, {0, 11, 0}, 28, 8, {10, 16, 8}};
         // 头部：8x8x8
@@ -38,15 +38,22 @@ void MobRenderer::registerModels() {
     }
 
     // ========== 牛 (Cow) ==========
-    // MC原版Java: 纹理64x32, 头8x8x8 UV(0,0), 身体addBox(-6,-10,-7, 12,18,10) UV(18,4), 腿4x12x4 UV(0,16)
+    // MC原版Java: 纹理64x32, 头8x8x6 UV(0,0), 嘴巴4x3x1 UV(22,0), 身体addBox(-6,-10,-7, 12,18,10) UV(18,4), 腿4x12x4 UV(0,16)
     // 身体旋转90度：3D(12,10,18) UV(12,18,10)
     {
         auto& cow = models_[static_cast<int>(MobType::Cow)];
-        cow.type = MobType::Cow; cow.textureName = "cow"; cow.texWidth = 64; cow.texHeight = 32;
+        cow.type = MobType::Cow; cow.textureName = "cow"; cow.texWidth = 64; cow.texHeight = 64;
         // 身体：3D空间 宽12 高10 长18，UV展开用 sx=12 sy=18 sz=10
         cow.body = {{-6, 12, -9}, {12, 10, 18}, {0, 17, 0}, 18, 4, {12, 18, 10}};
-        // 头部：8x8x8
-        cow.head = {{-4, 14, -17}, {8, 8, 8}, {0, 18, -9}, 0, 0};
+        // 头部：8x8x6（MC原版牛头宽8高8深6）
+        cow.head = {{-4, 14, -15}, {8, 8, 6}, {0, 18, -9}, 0, 0};
+        // 嘴巴/鼻子：MC原版 4x3x1，从头部正面中部突出
+        // MC原版：嘴巴addBox(-2,0,-7, 4,3,1) pivot(0,20,-8)
+        // MC模型空间Y向下，offset Y=0意味着从pivot向下延伸3像素
+        // 在我们的坐标系（Y向上）：嘴巴从 pivot.Y-3 到 pivot.Y = Y=15到18
+        cow.extraParts[0] = {{-2, 15, -16}, {4, 3, 1}, {0, 18, -9}, 22, 0};
+        cow.extraPartCount = 1;
+        cow.extraFollowHead[0] = true;  // 嘴巴跟随头部
         // 四条腿：4x12x4
         cow.legFrontLeft  = {{-6, 0, -8}, {4, 12, 4}, {-4, 12, -7}, 0, 16};
         cow.legFrontRight = {{ 2, 0, -8}, {4, 12, 4}, { 4, 12, -7}, 0, 16};
@@ -56,21 +63,34 @@ void MobRenderer::registerModels() {
     }
 
     // ========== 羊 (Sheep) ==========
-    // MC原版Java: 纹理64x32, 头6x6x8 UV(0,0), 身体addBox(-4,-10,-7, 8,16,6) UV(28,8), 腿4x12x4 UV(0,16)
-    // 身体旋转90度：3D(8,6,16) UV(8,16,6)
+    // MC原版Java: 纹理64x32, 头addBox(-3,-4,-4, 6,6,8) pivot(0,18,-8) UV(0,0)
+    // 身体addBox(-4,-10,-7, 8,16,6) pivot(0,5,2) 旋转90度 UV(28,8)
+    // 腿4x12x4 UV(0,16)
+    // MC原版羊有两层纹理：sheep.png（裸体）和 sheep_wool.png（毛层覆盖）
     {
         auto& sheep = models_[static_cast<int>(MobType::Sheep)];
         sheep.type = MobType::Sheep; sheep.textureName = "sheep"; sheep.texWidth = 64; sheep.texHeight = 32;
-        // 身体：3D空间 宽8 高6 长16，UV展开用 sx=8 sy=16 sz=6
-        sheep.body = {{-4, 13, -8}, {8, 6, 16}, {0, 16, 0}, 28, 8, {8, 16, 6}};
-        // 头部：6x6x8（深度8）
-        sheep.head = {{-3, 13, -14}, {6, 6, 8}, {0, 16, -6}, 0, 0};
-        // 四条腿：4x12x4
-        sheep.legFrontLeft  = {{-4, 1, -7}, {4, 12, 4}, {-2, 13, -5}, 0, 16};
-        sheep.legFrontRight = {{ 0, 1, -7}, {4, 12, 4}, { 2, 13, -5}, 0, 16};
-        sheep.legBackLeft   = {{-4, 1,  3}, {4, 12, 4}, {-2, 13,  5}, 0, 16};
-        sheep.legBackRight  = {{ 0, 1,  3}, {4, 12, 4}, { 2, 13,  5}, 0, 16};
+        // 身体：旋转90度后 3D宽8 高6 长16，UV展开用 sx=8 sy=16 sz=6
+        // 脚底Y=0，腿高12，身体底部Y=12，顶部Y=18
+        sheep.body = {{-4, 12, -8}, {8, 6, 16}, {0, 15, 0}, 28, 8, {8, 16, 6}};
+        // 头部：6x6x8（宽6高6深8）
+        // MC原版：addBox(-3,-4,-4, 6,6,8) pivot(0,18,-8)
+        // 头部Y: pivot.Y-4=14 到 pivot.Y+2=20
+        // 头部Z: pivot.Z-4=-12 到 pivot.Z+4=-4
+        sheep.head = {{-3, 14, -12}, {6, 6, 8}, {0, 18, -8}, 0, 0};
+        // 四条腿：4x12x4，脚底Y=0
+        sheep.legFrontLeft  = {{-4, 0, -7}, {4, 12, 4}, {-2, 12, -5}, 0, 16};
+        sheep.legFrontRight = {{ 0, 0, -7}, {4, 12, 4}, { 2, 12, -5}, 0, 16};
+        sheep.legBackLeft   = {{-4, 0,  3}, {4, 12, 4}, {-2, 12,  5}, 0, 16};
+        sheep.legBackRight  = {{ 0, 0,  3}, {4, 12, 4}, { 2, 12,  5}, 0, 16};
         sheep.isHumanoid = false;
+        // MC原版羊毛覆盖层：比裸体模型每边膨胀1.75像素
+        // 毛层身体：宽8+3.5=11.5 高6+3.5=9.5 长16+3.5=19.5
+        // 毛层头部：宽6+1=7 高6+1=7 深8+1=9（每边膨胀0.5）
+        // 毛层使用独立纹理 sheep_wool.png，UV布局与裸体相同
+        sheep.hasWoolOverlay = true;
+        sheep.woolBody = {{-5.75f, 10.25f, -9.75f}, {11.5f, 9.5f, 19.5f}, {0, 15, 0}, 28, 8, {8, 16, 6}};
+        sheep.woolHead = {{-3.5f, 13.5f, -12.5f}, {7.0f, 7.0f, 9.0f}, {0, 18, -8}, 0, 0};
     }
 
     // ========== 鸡 (Chicken) ==========
@@ -192,11 +212,12 @@ void MobRenderer::destroy() {
 
 // ========== 加载生物纹理 ==========
 
-bool MobRenderer::loadMobTextures(VulkanEngine& engine, const std::string& mobTextureDir) {
+bool MobRenderer::loadMobTextures(VulkanEngine& engine, const std::string& mobTextureDir,
+                                   const std::string& vanillaTexDir) {
     // 收集所有生物纹理，打包成一个图集
-    // 布局：垂直堆叠，每种生物一行
+    // 布局：水平排列，每种生物一块
     struct TexEntry {
-        MobType type;
+        int id;           // 生物类型索引，或 -1 表示额外纹理（如羊毛）
         std::string path;
         int w, h;
         uint8_t* data;
@@ -217,7 +238,24 @@ bool MobRenderer::loadMobTextures(VulkanEngine& engine, const std::string& mobTe
             std::cerr << "MobRenderer: failed to load " << path << "\n";
             continue;
         }
-        entries.push_back({static_cast<MobType>(i), path, w, h, data});
+        entries.push_back({i, path, w, h, data});
+    }
+
+    // 加载羊毛纹理（MC原版：独立的 sheep_wool.png）
+    int woolEntryIndex = -1;
+    if (!vanillaTexDir.empty()) {
+        std::string woolPath = vanillaTexDir + "/textures/entity/sheep/sheep_wool.png";
+        if (fs::exists(woolPath)) {
+            int w, h, ch;
+            uint8_t* data = stbi_load(woolPath.c_str(), &w, &h, &ch, 4);
+            if (data) {
+                woolEntryIndex = static_cast<int>(entries.size());
+                entries.push_back({-1, woolPath, w, h, data});
+                woolTexWidth_ = w;
+                woolTexHeight_ = h;
+                std::cout << "MobRenderer: loaded sheep wool texture (" << w << "x" << h << ")\n";
+            }
+        }
     }
 
     if (entries.empty()) return false;
@@ -241,13 +279,27 @@ bool MobRenderer::loadMobTextures(VulkanEngine& engine, const std::string& mobTe
     std::vector<uint8_t> atlasPixels(atlasWidth_ * atlasHeight_ * 4, 0);
 
     int xOffset = 0;
-    for (auto& e : entries) {
-        int idx = static_cast<int>(e.type);
-        if (idx >= static_cast<int>(texRegions_.size())) texRegions_.resize(idx + 1);
-        texRegions_[idx].uOffset = static_cast<float>(xOffset) / atlasWidth_;
-        texRegions_[idx].vOffset = 0.0f;
-        texRegions_[idx].uScale = static_cast<float>(e.w) / atlasWidth_;
-        texRegions_[idx].vScale = static_cast<float>(e.h) / atlasHeight_;
+    for (int ei = 0; ei < static_cast<int>(entries.size()); ei++) {
+        auto& e = entries[ei];
+
+        if (e.id >= 0) {
+            // 普通生物纹理
+            int idx = e.id;
+            if (idx >= static_cast<int>(texRegions_.size())) texRegions_.resize(idx + 1);
+            texRegions_[idx].uOffset = static_cast<float>(xOffset) / atlasWidth_;
+            texRegions_[idx].vOffset = 0.0f;
+            texRegions_[idx].uScale = static_cast<float>(e.w) / atlasWidth_;
+            texRegions_[idx].vScale = static_cast<float>(e.h) / atlasHeight_;
+        }
+
+        if (ei == woolEntryIndex) {
+            // 羊毛纹理的独立区域
+            woolTexRegion_.uOffset = static_cast<float>(xOffset) / atlasWidth_;
+            woolTexRegion_.vOffset = 0.0f;
+            woolTexRegion_.uScale = static_cast<float>(e.w) / atlasWidth_;
+            woolTexRegion_.vScale = static_cast<float>(e.h) / atlasHeight_;
+            hasWoolTexture_ = true;
+        }
 
         // Blit
         for (int y = 0; y < e.h; y++) {
@@ -398,10 +450,27 @@ void MobRenderer::appendMobMesh(const MobEntity& mob, float partialTick, float s
     // 头部
     addCuboid(model.head, texReg, model.texWidth, model.texHeight, root, light);
 
+    // 额外部件（如牛的嘴巴）—— 跟随头部的部件直接渲染在root下
+    for (int i = 0; i < model.extraPartCount; i++) {
+        if (model.extraFollowHead[i]) {
+            // 跟随头部（目前头部没有独立旋转，直接用root）
+            addCuboid(model.extraParts[i], texReg, model.texWidth, model.texHeight, root, light);
+        } else {
+            addCuboid(model.extraParts[i], texReg, model.texWidth, model.texHeight, root, light);
+        }
+    }
+
     // 身体
     addCuboid(model.body, texReg, model.texWidth, model.texHeight, root, light);
 
+    // 羊毛覆盖层（MC原版：未剪毛的羊渲染毛层，使用独立的 sheep_wool.png 纹理）
+    if (model.hasWoolOverlay && mob.mobType == MobType::Sheep && !mob.isSheared && hasWoolTexture_) {
+        addCuboid(model.woolBody, woolTexRegion_, woolTexWidth_, woolTexHeight_, root, light);
+        addCuboid(model.woolHead, woolTexRegion_, woolTexWidth_, woolTexHeight_, root, light);
+    }
+
     // 腿部动画
+    // MC原版：legSwing最大角度约50度(0.87rad)，正常行走时较慢
     float legSwing = std::sin(renderWalk) * 0.7f;
 
     if (model.isHumanoid) {

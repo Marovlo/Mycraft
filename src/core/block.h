@@ -79,6 +79,43 @@ enum class BlockRenderType : uint8_t {
     None,           // Air — not rendered
 };
 
+// 生物群系着色类型 — MC原版中草/树叶纹理是灰色的，需要通过 colormap 着色
+enum class TintType : uint8_t {
+    None,           // 不着色（默认）
+    Grass,          // 使用 colormap/grass.png 着色（草方块顶面、高草）
+    Foliage,        // 使用 colormap/foliage.png 着色（橡树叶等）
+    SpruceFixed,    // 云杉叶固定颜色 (97, 153, 97)（MC原版硬编码）
+};
+
+// 每个面可以有不同的 tint 类型（如草方块：顶面着色，侧面/底面不着色）
+struct BlockFaceTint {
+    TintType top    = TintType::None;
+    TintType bottom = TintType::None;
+    TintType north  = TintType::None;
+    TintType south  = TintType::None;
+    TintType east   = TintType::None;
+    TintType west   = TintType::None;
+
+    static BlockFaceTint uniform(TintType t) {
+        return {t, t, t, t, t, t};
+    }
+    static BlockFaceTint topOnly(TintType t) {
+        return {t, TintType::None, TintType::None, TintType::None, TintType::None, TintType::None};
+    }
+
+    TintType forDirection(Direction dir) const {
+        switch (dir) {
+            case Direction::PosY: return top;
+            case Direction::NegY: return bottom;
+            case Direction::NegZ: return north;
+            case Direction::PosZ: return south;
+            case Direction::PosX: return east;
+            case Direction::NegX: return west;
+            default: return top;
+        }
+    }
+};
+
 // Which face texture to use (allows per-face textures like grass block)
 struct BlockFaceTextures {
     uint16_t top;
@@ -147,6 +184,9 @@ struct BlockProperties {
     // --- 音效材质 ---
     // 决定行走、破坏、放置时的音效组。默认 Stone。
     SoundMaterial soundMaterial = SoundMaterial::Stone;
+
+    // --- 生物群系着色 ---
+    BlockFaceTint faceTint = {};  // 每个面的着色类型
 
     // Drops list. Evaluated in order; first matching rule wins. Empty = no drops.
     // Each rule: which item, how many, and (if requireToolForDrops) gating on tool.

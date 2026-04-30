@@ -1,6 +1,8 @@
 #include "mesh_builder.h"
 #include "texture_atlas.h"
 #include "world/light_engine.h"
+#include "world/biome_colormap.h"
+#include "world/terrain_generator.h"
 
 MeshBuilder::FaceQuad MeshBuilder::getFaceQuad(Direction dir) {
     switch (dir) {
@@ -14,7 +16,7 @@ MeshBuilder::FaceQuad MeshBuilder::getFaceQuad(Direction dir) {
     }
 }
 
-void MeshBuilder::addFace(const glm::vec3& blockPos, Direction dir, uint16_t texId, float light) {
+void MeshBuilder::addFace(const glm::vec3& blockPos, Direction dir, uint16_t texId, float light, const glm::vec3& color) {
     FaceQuad quad = getFaceQuad(dir);
     glm::vec3 normal = directionNormal(dir);
 
@@ -33,10 +35,10 @@ void MeshBuilder::addFace(const glm::vec3& blockPos, Direction dir, uint16_t tex
 
     uint32_t baseIdx = static_cast<uint32_t>(vertices_.size());
 
-    vertices_.push_back({blockPos + quad.v0, normal, uv0, light});
-    vertices_.push_back({blockPos + quad.v1, normal, uv1, light});
-    vertices_.push_back({blockPos + quad.v2, normal, uv2, light});
-    vertices_.push_back({blockPos + quad.v3, normal, uv3, light});
+    vertices_.push_back({blockPos + quad.v0, normal, uv0, light, color});
+    vertices_.push_back({blockPos + quad.v1, normal, uv1, light, color});
+    vertices_.push_back({blockPos + quad.v2, normal, uv2, light, color});
+    vertices_.push_back({blockPos + quad.v3, normal, uv3, light, color});
 
     indices_.push_back(baseIdx + 0);
     indices_.push_back(baseIdx + 1);
@@ -46,7 +48,7 @@ void MeshBuilder::addFace(const glm::vec3& blockPos, Direction dir, uint16_t tex
     indices_.push_back(baseIdx + 3);
 }
 
-void MeshBuilder::addTransparentFace(const glm::vec3& blockPos, Direction dir, uint16_t texId, float light) {
+void MeshBuilder::addTransparentFace(const glm::vec3& blockPos, Direction dir, uint16_t texId, float light, const glm::vec3& color) {
     FaceQuad quad = getFaceQuad(dir);
     glm::vec3 normal = directionNormal(dir);
 
@@ -62,10 +64,10 @@ void MeshBuilder::addTransparentFace(const glm::vec3& blockPos, Direction dir, u
 
     uint32_t baseIdx = static_cast<uint32_t>(transVertices_.size());
 
-    transVertices_.push_back({blockPos + quad.v0, normal, uv0, light});
-    transVertices_.push_back({blockPos + quad.v1, normal, uv1, light});
-    transVertices_.push_back({blockPos + quad.v2, normal, uv2, light});
-    transVertices_.push_back({blockPos + quad.v3, normal, uv3, light});
+    transVertices_.push_back({blockPos + quad.v0, normal, uv0, light, color});
+    transVertices_.push_back({blockPos + quad.v1, normal, uv1, light, color});
+    transVertices_.push_back({blockPos + quad.v2, normal, uv2, light, color});
+    transVertices_.push_back({blockPos + quad.v3, normal, uv3, light, color});
 
     transIndices_.push_back(baseIdx + 0);
     transIndices_.push_back(baseIdx + 1);
@@ -75,7 +77,7 @@ void MeshBuilder::addTransparentFace(const glm::vec3& blockPos, Direction dir, u
     transIndices_.push_back(baseIdx + 3);
 }
 
-void MeshBuilder::addCrossFaces(const glm::vec3& blockPos, uint16_t texId, float light) {
+void MeshBuilder::addCrossFaces(const glm::vec3& blockPos, uint16_t texId, float light, const glm::vec3& color) {
     glm::vec4 uvRect(0.0f, 0.0f, 1.0f, 1.0f);
     if (atlas_) uvRect = atlas_->getTileUV(texId);
     glm::vec2 uv0(uvRect.x, uvRect.y);
@@ -88,10 +90,10 @@ void MeshBuilder::addCrossFaces(const glm::vec3& blockPos, uint16_t texId, float
 
     {
         uint32_t base = static_cast<uint32_t>(vertices_.size());
-        vertices_.push_back({blockPos + glm::vec3(p,   0, p),   n, uv1, light});
-        vertices_.push_back({blockPos + glm::vec3(p,   1, p),   n, uv0, light});
-        vertices_.push_back({blockPos + glm::vec3(1-p, 1, 1-p), n, uv3, light});
-        vertices_.push_back({blockPos + glm::vec3(1-p, 0, 1-p), n, uv2, light});
+        vertices_.push_back({blockPos + glm::vec3(p,   0, p),   n, uv1, light, color});
+        vertices_.push_back({blockPos + glm::vec3(p,   1, p),   n, uv0, light, color});
+        vertices_.push_back({blockPos + glm::vec3(1-p, 1, 1-p), n, uv3, light, color});
+        vertices_.push_back({blockPos + glm::vec3(1-p, 0, 1-p), n, uv2, light, color});
         indices_.push_back(base); indices_.push_back(base+1); indices_.push_back(base+2);
         indices_.push_back(base); indices_.push_back(base+2); indices_.push_back(base+3);
         indices_.push_back(base); indices_.push_back(base+2); indices_.push_back(base+1);
@@ -99,10 +101,10 @@ void MeshBuilder::addCrossFaces(const glm::vec3& blockPos, uint16_t texId, float
     }
     {
         uint32_t base = static_cast<uint32_t>(vertices_.size());
-        vertices_.push_back({blockPos + glm::vec3(1-p, 0, p),   n, uv1, light});
-        vertices_.push_back({blockPos + glm::vec3(1-p, 1, p),   n, uv0, light});
-        vertices_.push_back({blockPos + glm::vec3(p,   1, 1-p), n, uv3, light});
-        vertices_.push_back({blockPos + glm::vec3(p,   0, 1-p), n, uv2, light});
+        vertices_.push_back({blockPos + glm::vec3(1-p, 0, p),   n, uv1, light, color});
+        vertices_.push_back({blockPos + glm::vec3(1-p, 1, p),   n, uv0, light, color});
+        vertices_.push_back({blockPos + glm::vec3(p,   1, 1-p), n, uv3, light, color});
+        vertices_.push_back({blockPos + glm::vec3(p,   0, 1-p), n, uv2, light, color});
         indices_.push_back(base); indices_.push_back(base+1); indices_.push_back(base+2);
         indices_.push_back(base); indices_.push_back(base+2); indices_.push_back(base+3);
         indices_.push_back(base); indices_.push_back(base+2); indices_.push_back(base+1);
@@ -174,6 +176,27 @@ static uint8_t neighborsGetLight(const ChunkNeighbors& n, int wx, int wy, int wz
 // Thread-safe build using ChunkNeighbors
 // ============================================================
 
+glm::vec3 MeshBuilder::getTintColor(TintType tintType, int wx, int wz) const {
+    if (tintType == TintType::None) return glm::vec3(1.0f);
+    if (tintType == TintType::SpruceFixed) return BiomeColorMap::getSpruceColor();
+
+    // 需要查询生物群系
+    int biomeType = 0; // 默认 Plains
+    if (terrainGen_) {
+        auto biome = terrainGen_->getBiome(wx, wz);
+        biomeType = static_cast<int>(biome);
+    }
+
+    if (!biomeColorMap_) return glm::vec3(1.0f);
+
+    if (tintType == TintType::Grass) {
+        return biomeColorMap_->getGrassColorForBiome(biomeType);
+    } else if (tintType == TintType::Foliage) {
+        return biomeColorMap_->getFoliageColorForBiome(biomeType);
+    }
+    return glm::vec3(1.0f);
+}
+
 void MeshBuilder::build(const ChunkNeighbors& neighbors) {
     vertices_.clear();
     indices_.clear();
@@ -205,7 +228,9 @@ void MeshBuilder::build(const ChunkNeighbors& neighbors) {
                 if (props.renderType == BlockRenderType::Cross) {
                     uint16_t texId = props.textures.top;
                     uint8_t lightLvl = neighborsGetLight(neighbors, wx, y, wz);
-                    addCrossFaces(blockPos, texId, LightEngine::lightToFloat(lightLvl));
+                    TintType tint = props.faceTint.top;
+                    glm::vec3 color = getTintColor(tint, wx, wz);
+                    addCrossFaces(blockPos, texId, LightEngine::lightToFloat(lightLvl), color);
                     continue;
                 }
 
@@ -247,12 +272,16 @@ void MeshBuilder::build(const ChunkNeighbors& neighbors) {
                         uint8_t lightLvl = neighborsGetLight(neighbors, nlx, nly, nlz);
                         float lightF = LightEngine::lightToFloat(lightLvl);
 
+                        // 获取该面的 tint 颜色
+                        TintType tint = props.faceTint.forDirection(dir);
+                        glm::vec3 color = getTintColor(tint, wx, wz);
+
                         if (props.renderType == BlockRenderType::Liquid) {
-                            addTransparentFace(blockPos, dir, texId, -(lightF + 2.0f));
+                            addTransparentFace(blockPos, dir, texId, -(lightF + 2.0f), color);
                         } else if (props.renderType == BlockRenderType::Transparent) {
-                            addTransparentFace(blockPos, dir, texId, lightF);
+                            addTransparentFace(blockPos, dir, texId, lightF, color);
                         } else {
-                            addFace(blockPos, dir, texId, lightF);
+                            addFace(blockPos, dir, texId, lightF, color);
                         }
                     }
                 }

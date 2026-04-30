@@ -7,6 +7,7 @@
 #include "core/block.h"
 #include "world/world.h"
 #include "world/terrain_generator.h"
+#include "world/biome_colormap.h"
 #include "renderer/mesh_builder.h"
 #include "renderer/texture_atlas.h"
 #include "renderer/texture_animator.h"
@@ -140,6 +141,7 @@ private:
     Player player_;
     std::unique_ptr<TerrainGenerator> terrainGen_;
     MeshBuilder meshBuilder_;
+    BiomeColorMap biomeColorMap_;
     TickClock tickClock_;
     UIRenderer uiRenderer_;
     BlockModelRenderer blockModel_;

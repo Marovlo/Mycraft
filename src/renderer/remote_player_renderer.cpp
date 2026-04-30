@@ -23,16 +23,22 @@ void RemotePlayerRenderer::defineModel() {
     body_ = {{-4, 12, -2}, {8, 12, 4}, {0, 12, 0}, 16, 16};
 
     // 右臂: 4x12x4, UV(40, 16), 轴心在肩膀
-    rightArm_ = {{-3, 0, -2}, {4, 12, 4}, {-5, 22, 0}, 40, 16};
+    // MC 原版：右臂挂在身体右侧外，pivot 在肩膀处(y=22)
+    // 手臂从肩膀向下延伸12px: origin.y = 22 - 12 = 10
+    // origin.x 使手臂中心对齐 pivot.x（-5）: origin.x = -5 - 2 = -7
+    rightArm_ = {{-7, 10, -2}, {4, 12, 4}, {-5, 22, 0}, 40, 16};
 
     // 左臂: 4x12x4, UV(32, 48), 轴心在肩膀
-    leftArm_ = {{-1, 0, -2}, {4, 12, 4}, {5, 22, 0}, 32, 48};
+    // origin.y = 22 - 12 = 10, origin.x = 5 - 2 = 3
+    leftArm_ = {{3, 10, -2}, {4, 12, 4}, {5, 22, 0}, 32, 48};
 
     // 右腿: 4x12x4, UV(0, 16), 轴心在胯部
-    rightLeg_ = {{-2, 0, -2}, {4, 12, 4}, {-2, 12, 0}, 0, 16};
+    // MC 原版：右腿在身体右半侧，pivot.x = -2，origin.x = -4（腿中心在 x=-2）
+    rightLeg_ = {{-4, 0, -2}, {4, 12, 4}, {-2, 12, 0}, 0, 16};
 
     // 左腿: 4x12x4, UV(16, 48), 轴心在胯部
-    leftLeg_ = {{-2, 0, -2}, {4, 12, 4}, {2, 12, 0}, 16, 48};
+    // MC 原版：左腿在身体左半侧，pivot.x = 2，origin.x = 0（腿中心在 x=2）
+    leftLeg_ = {{0, 0, -2}, {4, 12, 4}, {2, 12, 0}, 16, 48};
 }
 
 // ============================================================
@@ -208,8 +214,9 @@ void RemotePlayerRenderer::appendPlayerMesh(const RemotePlayer& player, float pa
     if (player.isSneaking) {
         baseTransform = glm::translate(baseTransform, glm::vec3(0, -0.2f, 0));
     }
-    // 玩家朝向（yaw 绕 Y 轴旋转，MC 中 yaw=0 面向 -Z）
-    baseTransform = glm::rotate(baseTransform, glm::radians(-player.yaw), glm::vec3(0, 1, 0));
+    // 玩家朝向：getForward() 使用标准球坐标（yaw=0 面向 +X），
+    // 但模型默认面向 -Z，需要额外偏移 90° 使模型朝向与 getForward() 一致
+    baseTransform = glm::rotate(baseTransform, glm::radians(-player.yaw - 90.0f), glm::vec3(0, 1, 0));
     baseTransform = glm::scale(baseTransform, glm::vec3(scale));
 
     // 潜行时身体前倾

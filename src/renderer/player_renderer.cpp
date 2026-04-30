@@ -403,7 +403,8 @@ const std::vector<PlayerRenderer::PixelInfo>& PlayerRenderer::getOrBuildPixelCac
 // ========== 每帧构建 ==========
 
 void PlayerRenderer::buildFrame(const Player& player, const Inventory& inventory,
-                                 float partialTick, const DayNightCycle* dayNight) {
+                                 float partialTick, const DayNightCycle* dayNight,
+                                 const glm::mat4& renderViewMatrix) {
     vertices_.clear();
     indices_.clear();
 
@@ -500,17 +501,36 @@ void PlayerRenderer::buildFrame(const Player& player, const Inventory& inventory
         bowRotation = -0.3f * chargeRatio;
     }
 
+    // ===== MC 原版 View Bobbing（走路时手臂晃动）=====
+    // MC 原版：走路时手臂有轻微的上下和左右晃动，基于移动距离累积
+    float bobX = 0.0f;
+    float bobY = 0.0f;
+    if (player.onGround && !player.sneaking) {
+        // 使用速度估算移动距离（水平分量）
+        float speed = std::sqrt(player.velocity.x * player.velocity.x + player.velocity.z * player.velocity.z);
+        if (speed > 0.01f) {
+            // MC 原版 bobbing 频率和幅度
+            float bobPhase = speed * 3.0f * partialTick + speed * 3.0f;
+            bobX = std::sin(bobPhase) * speed * 0.5f;
+            bobY = -std::abs(std::cos(bobPhase)) * speed * 0.4f;
+            // 限制最大幅度
+            bobX = std::clamp(bobX, -0.02f, 0.02f);
+            bobY = std::clamp(bobY, -0.02f, 0.0f);
+        }
+    }
+
     // ===== 组合变换 =====
     // viewmodel 的顶点需要在世界空间中生成（因为着色器使用 proj * view * model * pos）
     // 策略：先在相机局部空间中定义 viewmodel，然后用 view 矩阵的逆矩阵转换到世界空间
-    glm::mat4 invView = glm::inverse(player.getViewMatrix());
+    // 使用传入的渲染 view 矩阵（与相机一致，使用插值位置），避免手臂和相机不同步导致抖动
+    glm::mat4 invView = glm::inverse(renderViewMatrix);
 
     glm::mat4 viewmodel = invView;
 
-    // 基础位置（相机空间中的偏移）
+    // 基础位置（相机空间中的偏移）+ view bobbing
     viewmodel = viewmodel * glm::translate(glm::mat4(1.0f), glm::vec3(
-        baseX + swingTransX + eatTransX + bowTransX,
-        baseY + swingTransY + eatTransY + bowTransY,
+        baseX + swingTransX + eatTransX + bowTransX + bobX,
+        baseY + swingTransY + eatTransY + bowTransY + bobY,
         baseZ + swingTransZ + eatTransZ + bowTransZ
     ));
 

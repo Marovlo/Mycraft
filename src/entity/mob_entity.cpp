@@ -303,6 +303,37 @@ void MobEntity::tick(World& world, EntityManager& mgr,
     if (attackCooldown > 0) attackCooldown--;
     if (panicTicks > 0) panicTicks--;
 
+    // MC原版羊吃草机制：被剪毛后随机吃草，吃草后毛重新生长
+    if (mobType == MobType::Sheep) {
+        if (isSheared && eatGrassTimer <= 0 && grassRegrowTimer <= 0) {
+            // 随机决定是否开始吃草（大约每50tick尝试一次）
+            if (onGround && mobRandInt(0, 49) == 0) {
+                // 检查脚下是否有草方块
+                int bx = static_cast<int>(std::floor(position.x));
+                int by = static_cast<int>(std::floor(position.y - halfExtents.y)) - 1;
+                int bz = static_cast<int>(std::floor(position.z));
+                BlockId below = world.getBlock(bx, by, bz);
+                if (below == Block::Grass) {
+                    eatGrassTimer = 40;  // 吃草动画40tick
+                }
+            }
+        }
+        if (eatGrassTimer > 0) {
+            eatGrassTimer--;
+            if (eatGrassTimer == 0) {
+                // 吃草完成，把草方块变成泥土，毛重新生长
+                int bx = static_cast<int>(std::floor(position.x));
+                int by = static_cast<int>(std::floor(position.y - halfExtents.y)) - 1;
+                int bz = static_cast<int>(std::floor(position.z));
+                BlockId below = world.getBlock(bx, by, bz);
+                if (below == Block::Grass) {
+                    world.setBlock(bx, by, bz, Block::Dirt);
+                }
+                isSheared = false;  // 毛重新长出
+            }
+        }
+    }
+
     // MC 原版：生物随机环境叫声（数据驱动，从 MobProperties::sounds 读取）
     if (ambientSoundTimer_ <= 0) {
         const auto& props = MobRegistry::instance().get(mobType);
@@ -374,9 +405,20 @@ void MobEntity::tick(World& world, EntityManager& mgr,
     // 行走动画
     float speed = std::sqrt(velocity.x * velocity.x + velocity.z * velocity.z);
     if (speed > 0.01f) {
-        float animSpeed = (panicTicks > 0) ? speed * 3.5f : speed * 1.2f;
+        // MC原版：正常行走时腿摆动较慢，恐慌时加速
+        // 降低animSpeed系数使腿摆动更自然
+        float animSpeed = (panicTicks > 0) ? speed * 2.0f : speed * 0.6f;
         walkCycle += animSpeed;
         if (walkCycle > 6.2831853f) walkCycle -= 6.2831853f;
+    } else {
+        // MC原版：静止时腿部快速回到站直位置（walkCycle归零）
+        // 使用快速衰减，让腿自然回到直立状态
+        if (walkCycle > 0.01f) {
+            // 找到最近的 sin(walkCycle)==0 的点（0 或 π 的整数倍）
+            // 简化处理：直接快速衰减到0
+            walkCycle *= 0.7f;  // 每tick衰减30%，约5tick内基本归零
+            if (walkCycle < 0.05f) walkCycle = 0.0f;
+        }
     }
 
     // 虚空伤害
@@ -562,7 +604,10 @@ void MobEntity::moveToward(const glm::vec3& target, float speed, World* world) {
     if (dist < 0.01f) return;
     dir /= dist;
 
-    bodyYaw = std::atan2(dir.x, dir.z);
+    // MC原版：bodyYaw 是模型面朝的方向
+    // atan2(x, z) 给出从+Z轴的角度，但模型前方是-Z
+    // 所以需要加π使模型面朝移动方向
+    bodyYaw = std::atan2(dir.x, dir.z) + 3.14159265f;
 
     // 自动跳跃
     if (onGround && world) {

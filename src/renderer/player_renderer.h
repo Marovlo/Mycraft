@@ -29,8 +29,10 @@ public:
 
     // 每帧构建 viewmodel mesh
     // partialTick: 0~1 帧间插值因子
+    // renderViewMatrix: 渲染用的 view 矩阵（与相机一致，使用插值位置）
     void buildFrame(const Player& player, const Inventory& inventory,
-                    float partialTick, const DayNightCycle* dayNight);
+                    float partialTick, const DayNightCycle* dayNight,
+                    const glm::mat4& renderViewMatrix);
 
     // 渲染 viewmodel（在世界渲染之后、UI 之前调用）
     // 分两批：手臂用皮肤纹理，手持物品用方块图集

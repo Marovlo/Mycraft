@@ -9,6 +9,8 @@
 #include <vector>
 
 class TextureAtlas;
+class BiomeColorMap;
+class OverworldGenerator;
 
 // 邻居区块指针集合 — 用于线程安全的 mesh 构建。
 // 在主线程中捕获指针，传给工作线程使用（只读访问）。
@@ -29,6 +31,12 @@ class MeshBuilder {
 public:
     // Set the texture atlas for UV coordinate computation (must be called before build)
     void setAtlas(const TextureAtlas* atlas) { atlas_ = atlas; }
+
+    // Set the biome colormap for tint color lookup
+    void setBiomeColorMap(const BiomeColorMap* colorMap) { biomeColorMap_ = colorMap; }
+
+    // Set the terrain generator for biome queries
+    void setTerrainGenerator(const OverworldGenerator* gen) { terrainGen_ = gen; }
 
     // Build mesh data for a chunk.
     // Requires access to the world for cross-chunk neighbor lookups.
@@ -61,6 +69,11 @@ private:
     std::vector<Vertex> transVertices_;
     std::vector<uint32_t> transIndices_;
     const TextureAtlas* atlas_ = nullptr;
+    const BiomeColorMap* biomeColorMap_ = nullptr;
+    const OverworldGenerator* terrainGen_ = nullptr;
+
+    // 根据 TintType 和世界坐标获取 tint 颜色
+    glm::vec3 getTintColor(TintType tintType, int wx, int wz) const;
 
     // Face geometry for each direction
     struct FaceQuad {
@@ -69,7 +82,7 @@ private:
 
     static FaceQuad getFaceQuad(Direction dir);
 
-    void addFace(const glm::vec3& blockPos, Direction dir, uint16_t texId, float light = 1.0f);
-    void addTransparentFace(const glm::vec3& blockPos, Direction dir, uint16_t texId, float light = 1.0f);
-    void addCrossFaces(const glm::vec3& blockPos, uint16_t texId, float light = 1.0f);
+    void addFace(const glm::vec3& blockPos, Direction dir, uint16_t texId, float light = 1.0f, const glm::vec3& color = glm::vec3(1.0f));
+    void addTransparentFace(const glm::vec3& blockPos, Direction dir, uint16_t texId, float light = 1.0f, const glm::vec3& color = glm::vec3(1.0f));
+    void addCrossFaces(const glm::vec3& blockPos, uint16_t texId, float light = 1.0f, const glm::vec3& color = glm::vec3(1.0f));
 };

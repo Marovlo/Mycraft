@@ -19,7 +19,7 @@ struct WanderGoal : AIGoal {
     WanderGoal() { priority = 5; }
 
     bool canUse(const MobEntity& mob, const World&, const Player&) const override {
-        return mob.aiState == AIState::Idle && cooldown <= 0;
+        return (mob.aiState == AIState::Idle || mob.aiState == AIState::Wander) && cooldown <= 0;
     }
 
     void tick(MobEntity& mob, World& world, Player&, EntityManager&) override;

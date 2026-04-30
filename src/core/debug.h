@@ -36,6 +36,8 @@ enum class DebugCat : uint8_t {
     UI,            // hud / inventory display
     Physics,       // player / entity collision
     Save,          // save/load operations
+    Network,       // network connection / sync
+    Server,        // server tick loop / processing
     _COUNT
 };
 

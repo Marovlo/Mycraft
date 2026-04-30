@@ -17,6 +17,8 @@ static const char* kCategoryNames[] = {
     "ui",
     "physics",
     "save",
+    "network",
+    "server",
 };
 static_assert(sizeof(kCategoryNames) / sizeof(kCategoryNames[0])
                   == static_cast<size_t>(DebugCat::_COUNT),

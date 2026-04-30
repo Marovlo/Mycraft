@@ -170,6 +170,11 @@ public:
     // 蜘蛛专用：被激怒标记（白天被攻击后会追踪玩家）
     bool provoked = false;
 
+    // 羊专用：剪毛/吃草机制（MC原版）
+    bool isSheared = false;        // 是否被剪毛
+    int eatGrassTimer = 0;         // 吃草动画计时器（>0 表示正在吃草）
+    int grassRegrowTimer = 0;      // 吃草后毛重新生长的计时器
+
     // 燃烧（僵尸/骷髅阳光下）
     int fireTicks = 0;
     int fireTimer = 0;         // 每秒伤害计时

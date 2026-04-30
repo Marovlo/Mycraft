@@ -22,12 +22,13 @@ VkVertexInputBindingDescription Vertex::getBindingDescription() {
     return desc;
 }
 
-std::array<VkVertexInputAttributeDescription, 4> Vertex::getAttributeDescriptions() {
-    std::array<VkVertexInputAttributeDescription, 4> attrs{};
+std::array<VkVertexInputAttributeDescription, 5> Vertex::getAttributeDescriptions() {
+    std::array<VkVertexInputAttributeDescription, 5> attrs{};
     attrs[0] = {0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(Vertex, position)};
     attrs[1] = {1, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(Vertex, normal)};
     attrs[2] = {2, 0, VK_FORMAT_R32G32_SFLOAT, offsetof(Vertex, texCoord)};
     attrs[3] = {3, 0, VK_FORMAT_R32_SFLOAT, offsetof(Vertex, light)};
+    attrs[4] = {4, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(Vertex, color)};
     return attrs;
 }
 

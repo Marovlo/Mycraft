@@ -1,7 +1,6 @@
 #pragma once
 
 #include <cstdint>
-#include <cstdio>
 
 // Fixed-rate game tick clock (20 TPS = 50ms per tick, same as Minecraft).
 // Decouples game logic from render framerate.
@@ -40,14 +39,6 @@ public:
         // Clamp accumulator to prevent unbounded growth if severely lagging
         if (accumulator_ > TICK_DURATION * MAX_TICKS_PER_FRAME) {
             accumulator_ = 0.0;
-        }
-
-        // 调试：检测 tick 停止问题
-        static int dbgAdv = 0;
-        dbgAdv++;
-        if (dbgAdv <= 5 || (ticks == 0 && dbgAdv % 120 == 0)) {
-            std::printf("[CLOCK] frame=%d now=%.3f elapsed=%.6f acc=%.6f ticks=%d total=%llu\n",
-                        dbgAdv, currentTime, elapsed, accumulator_, ticks, (unsigned long long)totalTicks_);
         }
 
         partialTick_ = static_cast<float>(accumulator_ / TICK_DURATION);

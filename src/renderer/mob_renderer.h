@@ -32,6 +32,17 @@ struct MobModelDef {
     MobCuboid legBackLeft, legBackRight;
     MobCuboid armLeft, armRight;  // 仅人形生物使用
 
+    // 额外部件（如牛的嘴巴）
+    MobCuboid extraParts[4];     // 最多4个额外部件
+    int extraPartCount = 0;      // 实际使用的额外部件数
+    bool extraFollowHead[4] = {false, false, false, false};  // 是否跟随头部旋转
+
+    // 羊毛覆盖层（MC原版：羊有独立的毛层渲染在身体/头上方）
+    bool hasWoolOverlay = false;
+    MobCuboid woolBody;          // 羊毛身体层（比身体稍大）
+    MobCuboid woolHead;          // 羊毛头部层
+    int woolTexOffsetX = 0, woolTexOffsetY = 0;  // 羊毛纹理在图集中的UV偏移
+
     bool isHumanoid = false;     // 人形（僵尸/骷髅）vs 四足
     bool hasArms = false;
 };
@@ -43,7 +54,9 @@ public:
     void destroy();
 
     // 加载所有生物纹理到独立的纹理图集
-    bool loadMobTextures(VulkanEngine& engine, const std::string& mobTextureDir);
+    // vanillaTexDir: MC原版纹理根目录（用于加载羊毛等额外纹理）
+    bool loadMobTextures(VulkanEngine& engine, const std::string& mobTextureDir,
+                         const std::string& vanillaTexDir = "");
 
     // 每帧重建 mesh
     void buildFrame(const EntityManager& mgr, float partialTick,
@@ -81,6 +94,11 @@ private:
         float uScale, vScale;    // 归一化缩放
     };
     std::vector<TexRegion> texRegions_;
+
+    // 羊毛纹理在图集中的独立区域（MC原版使用独立的 sheep_wool.png）
+    TexRegion woolTexRegion_{};
+    bool hasWoolTexture_ = false;
+    int woolTexWidth_ = 64, woolTexHeight_ = 32;  // 羊毛纹理尺寸
 
     // CPU staging
     std::vector<Vertex> vertices_;

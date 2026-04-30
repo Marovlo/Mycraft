@@ -101,7 +101,7 @@ void Server::tickLoop() {
     auto startTime = Clock::now();
     int tickCount = 0;
 
-    std::printf("[SRV-TICK] Thread started\n");
+    VLOG(DebugCat::Server, "Tick thread started");
 
     while (running_.load()) {
         auto now = Clock::now();
@@ -111,10 +111,10 @@ void Server::tickLoop() {
             try {
                 processTick();
             } catch (const std::exception& e) {
-                std::printf("[SRV-TICK] EXCEPTION in processTick: %s\n", e.what());
+                std::fprintf(stderr, "[SRV-TICK] EXCEPTION in processTick: %s\n", e.what());
                 break;
             } catch (...) {
-                std::printf("[SRV-TICK] UNKNOWN EXCEPTION in processTick!\n");
+                std::fprintf(stderr, "[SRV-TICK] UNKNOWN EXCEPTION in processTick!\n");
                 break;
             }
             auto tickEnd = Clock::now();
@@ -123,8 +123,8 @@ void Server::tickLoop() {
             
             if (tickCount <= 10 || tickMs > 20.0 || tickCount % 100 == 0) {
                 double elapsed = std::chrono::duration<double>(now - startTime).count();
-                std::printf("[SRV-TICK %d] %.1fms (t=%.1fs, clients=%u)\n",
-                            tickCount, tickMs, elapsed, network_.getClientCount());
+                VLOG(DebugCat::Server, "tick %d: %.1fms (t=%.1fs, clients=%u)",
+                     tickCount, tickMs, elapsed, network_.getClientCount());
             }
             
             nextTick += std::chrono::duration_cast<Clock::duration>(
@@ -144,7 +144,7 @@ void Server::tickLoop() {
             }
         }
     }
-    std::printf("[SRV-TICK] Loop exited after %d ticks (running=%d)\n", tickCount, running_.load());
+    VLOG(DebugCat::Server, "Tick loop exited after %d ticks (running=%d)", tickCount, running_.load());
 }
 
 void Server::tick() {
@@ -153,13 +153,10 @@ void Server::tick() {
 
 void Server::processTick() {
     // 1. 处理网络包
-    std::printf("[SRV] tick%llu: poll...", (unsigned long long)totalTicks_);
     network_.pollEvents(0);
-    std::printf("packets...");
     processPackets();
 
     // 2. 世界逻辑
-    std::printf("world...");
     tickBlockUpdates();
     tickEntities();
     tickDayNight();
@@ -167,7 +164,6 @@ void Server::processTick() {
     tickFurnaces();
 
     // 3. 同步实体位置给客户端
-    std::printf("sync...");
     broadcastEntityPositions();
 
     // 4. 发送区块给需要的玩家
@@ -190,7 +186,6 @@ void Server::processTick() {
     }
 
     totalTicks_++;
-    std::printf("done\n");
 }
 
 // === 网络包处理 ===

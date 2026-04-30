@@ -12,6 +12,8 @@
 #include <mutex>
 #include <memory>
 
+class BiomeColorMap;
+
 // ========== ChunkTaskManager ==========
 // 管理区块的异步生成、加载和 mesh 构建。
 // 主线程提交任务，工作线程执行 CPU 密集型工作，
@@ -50,7 +52,8 @@ public:
     // 初始化线程池和工作资源
     // numThreads=0 表示自动检测
     void init(int numThreads, TerrainGenerator* terrainGen,
-              SaveManager* saveManager, const TextureAtlas* atlas);
+              SaveManager* saveManager, const TextureAtlas* atlas,
+              const BiomeColorMap* biomeColorMap = nullptr);
 
     void shutdown();
 
@@ -96,6 +99,7 @@ private:
     TerrainGenerator* terrainGen_ = nullptr;
     SaveManager* saveManager_ = nullptr;
     const TextureAtlas* atlas_ = nullptr;
+    const BiomeColorMap* biomeColorMap_ = nullptr;
 
     // SaveManager 的 loadChunk 不是线程安全的（共享 RegionFile 缓存），需要加锁
     std::mutex saveMutex_;

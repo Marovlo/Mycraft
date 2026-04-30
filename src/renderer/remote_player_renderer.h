@@ -52,6 +52,9 @@ public:
     // 渲染所有远程玩家（在不透明管线中调用）
     void render(VkCommandBuffer cmd, VkPipelineLayout pipelineLayout);
 
+    // 清空当前帧数据（切换回第一人称时调用，防止空壳残留）
+    void clearFrame() { indexCountThisFrame_ = 0; }
+
     bool hasContent() const { return indexCountThisFrame_ > 0; }
     bool hasSkinTexture() const { return skinImage_.allocation != nullptr; }
 

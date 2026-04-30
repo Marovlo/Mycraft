@@ -28,7 +28,7 @@ Game::~Game() {
 
     // 关闭网络连接
     if (integratedServer_) {
-        std::cout << "[DEBUG] ~Game() calling integratedServer_->stop()" << std::endl;
+        VLOG(DebugCat::Network, "~Game() calling integratedServer_->stop()");
         integratedServer_->stop();
         integratedServer_.reset();
     }
@@ -188,7 +188,8 @@ void Game::init() {
     mobRenderer_.init(&engine_);
     {
         std::string mobTexDir = std::string(ASSET_DIR) + "/textures/mobs";
-        if (!mobRenderer_.loadMobTextures(engine_, mobTexDir)) {
+        std::string vanillaTexDir = std::string(ASSET_DIR) + "/minecraft_vanilla";
+        if (!mobRenderer_.loadMobTextures(engine_, mobTexDir, vanillaTexDir)) {
             std::cerr << "Warning: failed to load mob textures from " << mobTexDir << "\n";
         }
     }
@@ -316,9 +317,10 @@ void Game::enterWorld(const std::string& worldName, int64_t seed) {
     }
 
     terrainGen_ = std::make_unique<OverworldGenerator>(static_cast<int>(worldSeed_));
+    meshBuilder_.setTerrainGenerator(dynamic_cast<OverworldGenerator*>(terrainGen_.get()));
 
     // 初始化多线程区块任务管理器
-    chunkTaskMgr_.init(0, terrainGen_.get(), &saveManager_, &textureAtlas_);
+    chunkTaskMgr_.init(0, terrainGen_.get(), &saveManager_, &textureAtlas_, &biomeColorMap_);
 
     // 初始化方块更新系统
     blockUpdateSystem_.init();
@@ -430,7 +432,7 @@ void Game::leaveWorld() {
 
     // 关闭网络连接
     if (integratedServer_) {
-        std::cout << "[DEBUG] leaveWorld() integratedServer_->stop()" << std::endl;
+        VLOG(DebugCat::Network, "leaveWorld() integratedServer_->stop()");
         integratedServer_->stop();
         integratedServer_.reset();
     }
@@ -530,9 +532,10 @@ void Game::connectToServer(const std::string& host, uint16_t port, const std::st
     // 连接成功，初始化客户端世界
     worldSeed_ = clientConnection_->getWorldSeed();
     terrainGen_ = std::make_unique<OverworldGenerator>(static_cast<int>(worldSeed_));
+    meshBuilder_.setTerrainGenerator(dynamic_cast<OverworldGenerator*>(terrainGen_.get()));
 
     // 初始化多线程区块任务管理器（多人模式不需要 SaveManager）
-    chunkTaskMgr_.init(0, terrainGen_.get(), nullptr, &textureAtlas_);
+    chunkTaskMgr_.init(0, terrainGen_.get(), nullptr, &textureAtlas_, &biomeColorMap_);
 
     blockUpdateSystem_.init();
 
@@ -589,8 +592,8 @@ void Game::processNetworkSync() {
 
     // 检查连接状态
     if (!conn->isConnected()) {
-        std::printf("[DEBUG] processNetworkSync: connection lost! server running=%d\n",
-                    integratedServer_ ? integratedServer_->isRunning() : -1);
+        VLOG(DebugCat::Network, "processNetworkSync: connection lost! server running=%d",
+             integratedServer_ ? integratedServer_->isRunning() : -1);
         leaveWorld();
         return;
     }
@@ -750,6 +753,13 @@ void Game::loadTextureAtlas() {
     engine_.updateTextureDescriptor(textureAtlas_.getImage().imageView, engine_.getDefaultSampler());
     meshBuilder_.setAtlas(&textureAtlas_);
 
+    // 加载生物群系颜色映射表
+    std::string assetDir = std::string(ASSET_DIR);
+    if (!biomeColorMap_.load(assetDir)) {
+        std::cerr << "[Game] Warning: Failed to load biome colormaps\n";
+    }
+    meshBuilder_.setBiomeColorMap(&biomeColorMap_);
+
     // 初始化纹理动画（水、岩浆等）
     std::string vanillaBlockDir = std::string(ASSET_DIR) + "/minecraft_vanilla/textures/block";
     textureAnimator_.init(vanillaBlockDir, textureAtlas_, 16);
@@ -794,16 +804,6 @@ void Game::update(float dt) {
     }
 
     processNetworkSync();
-
-    // 调试：检测卡住问题
-    static int dbgFrame = 0;
-    dbgFrame++;
-    if (dbgFrame <= 30 || dbgFrame % 60 == 0) {
-        std::cout << "[F" << dbgFrame << "] ticks=" << ticks
-                  << " gs=" << static_cast<int>(gameState_)
-                  << " conn=" << (integratedServer_ ? integratedServer_->getConnection().isConnected() : false)
-                  << std::endl;
-    }
 
     // processNetworkSync 可能调用 leaveWorld 改变 gameState
     if (gameState_ != GameState::Playing) {
@@ -958,7 +958,14 @@ void Game::update(float dt) {
 
     entityRenderer_.buildFrame(entityManager_, partial);
     mobRenderer_.buildFrame(entityManager_, partial, &dayNightCycle_);
-    playerRenderer_.buildFrame(player_, inventory_, partial, &dayNightCycle_);
+
+    // 构建第一人称 viewmodel 时使用与相机一致的插值 view 矩阵，避免手臂抖动
+    {
+        glm::vec3 fpEye = renderEye;  // 已经是插值后的眼睛位置
+        glm::vec3 fpForward = player_.getForward();
+        glm::mat4 fpViewMatrix = glm::lookAt(fpEye, fpEye + fpForward, glm::vec3(0, 1, 0));
+        playerRenderer_.buildFrame(player_, inventory_, partial, &dayNightCycle_, fpViewMatrix);
+    }
 
     // 构建远程玩家第三人称模型 mesh + 本地玩家第三人称模型（F5 视角）
     {
@@ -995,6 +1002,9 @@ void Game::update(float dt) {
                     player_.isEating, player_.eatingTicks,
                     partial, skyLight);
             }
+        } else {
+            // 第一人称且无远程玩家：清空上一帧的第三人称模型数据，防止空壳残留
+            remotePlayerRenderer_.clearFrame();
         }
     }
 
@@ -1130,15 +1140,7 @@ void Game::gameTick() {
     blockUpdateSystem_.tick(world_, entityManager_, player_, tickClock_.getTotalTicks());
 
     // 纹理动画（水、岩浆等帧动画）
-    static int texAnimDbg = 0;
-    texAnimDbg++;
-    if (texAnimDbg <= 10) {
-        std::cout << "[TICK" << texAnimDbg << "] texAnim begin..." << std::flush;
-    }
     textureAnimator_.tick(engine_, textureAtlas_);
-    if (texAnimDbg <= 10) {
-        std::cout << "done" << std::endl;
-    }
 
     // ===== 环境音效 =====
     tickCaveAmbient();

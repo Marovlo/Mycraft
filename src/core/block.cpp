@@ -58,6 +58,7 @@ void BlockRegistry::registerDefaults() {
         .requiredMiningLevel = 0,
         .requireToolForDrops = false,
         .soundMaterial = SoundMaterial::Grass,
+        .faceTint = BlockFaceTint::topOnly(TintType::Grass),
         .drops = { D{Item::Dirt, 1, 1} },
     });
 
@@ -130,6 +131,7 @@ void BlockRegistry::registerDefaults() {
         .requiredToolType = ToolType::None,
         .requireToolForDrops = false,
         .soundMaterial = SoundMaterial::Grass,
+        .faceTint = BlockFaceTint::uniform(TintType::Foliage),
         .drops = { D{Item::Apple, 0, 1} },   // 0-1 apples (for now always 1; RNG later)
     });
 
@@ -277,7 +279,18 @@ void BlockRegistry::registerDefaults() {
         });
     };
 
-    regPlant("tall_grass",      "Tall Grass",      "tall_grass");                          // 22 — no drop (MC: seeds, not yet)
+    // tall_grass 需要单独注册以设置 faceTint
+    registerBlock({
+        .name = "tall_grass",
+        .displayName = "Tall Grass",
+        .renderType = BlockRenderType::Cross,
+        .textureNames = BlockFaceTextureNames::uniform("tall_grass"),
+        .isSolid = false,
+        .isOpaque = false,
+        .hardness = 0.0f,
+        .soundMaterial = SoundMaterial::Grass,
+        .faceTint = BlockFaceTint::uniform(TintType::Grass),
+    });                                                                                    // 22 — no drop (MC: seeds, not yet)
     regPlant("poppy",           "Poppy",           "poppy",          Item::Poppy);         // 23
     regPlant("dandelion",       "Dandelion",       "dandelion",      Item::Dandelion);     // 24
     regPlant("blue_orchid",     "Blue Orchid",     "blue_orchid",    Item::BlueOrchid);    // 25
@@ -329,6 +342,7 @@ void BlockRegistry::registerDefaults() {
         .textureNames = BlockFaceTextureNames::uniform("spruce_leaves"),
         .isSolid = true, .isOpaque = false, .hardness = 0.2f,
         .soundMaterial = SoundMaterial::Grass,
+        .faceTint = BlockFaceTint::uniform(TintType::SpruceFixed),
     });
     registerBlock({  // 34 Cactus
         .name = "cactus", .displayName = "Cactus",
