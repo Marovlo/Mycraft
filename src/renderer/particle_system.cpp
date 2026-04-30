@@ -199,6 +199,50 @@ void ParticleSystem::spawnCrit(const glm::vec3& pos) {
     }
 }
 
+// MC 原版吃东西粒子：食物碎片从嘴巴位置飞出
+// 每次调用生成 2~3 个碎片，使用食物纹理的随机小区域
+void ParticleSystem::spawnEating(const glm::vec3& pos, const glm::vec3& forward, uint16_t tileIndex) {
+    glm::vec4 tileUV = atlas_->getTileUV(tileIndex);
+
+    int count = 2 + rand() % 2;
+    for (int i = 0; i < count; i++) {
+        Particle p;
+        // 从嘴巴位置稍微偏移
+        p.position = pos + forward * 0.3f + glm::vec3(
+            randFloat(-0.1f, 0.1f),
+            randFloat(-0.1f, 0.05f),
+            randFloat(-0.1f, 0.1f)
+        );
+
+        // 向前方 + 向下飞散（MC 原版食物碎片向前飞出然后落下）
+        p.velocity = forward * randFloat(0.5f, 1.5f) + glm::vec3(
+            randFloat(-0.5f, 0.5f),
+            randFloat(-0.5f, 0.5f),
+            randFloat(-0.5f, 0.5f)
+        );
+        p.gravity = glm::vec3(0.0f, -12.0f, 0.0f);
+
+        // 从食物纹理中取一小块作为碎片 UV（4x4 像素区域）
+        float uRange = tileUV.z - tileUV.x;
+        float vRange = tileUV.w - tileUV.y;
+        float subU = randFloat(0.0f, 0.75f);
+        float subV = randFloat(0.0f, 0.75f);
+        p.uvMin = glm::vec2(tileUV.x + subU * uRange, tileUV.y + subV * vRange);
+        p.uvMax = glm::vec2(tileUV.x + (subU + 0.25f) * uRange, tileUV.y + (subV + 0.25f) * vRange);
+
+        p.color = glm::vec4(1.0f);  // 使用原始纹理颜色
+        p.size = randFloat(0.03f, 0.07f);
+        p.lifetime = randFloat(0.4f, 0.8f);
+        p.age = 0.0f;
+        p.friction = 0.7f;
+        p.type = ParticleType::BlockBreak;  // 复用方块碎片的物理行为
+        p.onGround = false;
+        p.alive = true;
+
+        particles_.push_back(p);
+    }
+}
+
 // === 物理更新 ===
 
 void ParticleSystem::update(float dt) {

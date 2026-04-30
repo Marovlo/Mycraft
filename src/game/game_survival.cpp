@@ -80,6 +80,23 @@ void Game::tickEating() {
     if (!player_.isEating) return;
 
     ++player_.eatingTicks;
+
+    // MC 原版：吃东西时每 4 tick 生成食物碎片粒子
+    if (player_.eatingTicks % 4 == 0) {
+        const ItemStack& held = inventory_.getHeldItem();
+        if (!held.isEmpty()) {
+            const auto& fp = ItemRegistry::instance().get(held.id);
+            if (!fp.iconTileName.empty()) {
+                uint16_t tileIdx = textureAtlas_.getTileIndex(fp.iconTileName);
+                glm::vec3 eyePos = player_.getEyePosition();
+                glm::vec3 forward = player_.getForward();
+                // 嘴巴位置：眼睛前方偏下
+                glm::vec3 mouthPos = eyePos + forward * 0.3f - glm::vec3(0.0f, 0.15f, 0.0f);
+                particleSystem_.spawnEating(mouthPos, forward, tileIdx);
+            }
+        }
+    }
+
     if (player_.eatingTicks >= 32) {
         ItemStack& held = inventory_.getHeldItem();
         if (!held.isEmpty()) {
@@ -187,6 +204,9 @@ void Game::tickPlayerAttack() {
 
         closestMob->takeDamage(static_cast<int>(baseDmg), kb);
         player_.attackCooldownTicks = player_.attackCooldownMax;
+
+        // 触发挥动动画
+        player_.startSwing();
 
         // 工具耐久消耗
         if (!held.isEmpty()) {

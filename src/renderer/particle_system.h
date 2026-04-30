@@ -59,6 +59,12 @@ public:
     // 暴击粒子：在实体位置生成星星
     void spawnCrit(const glm::vec3& pos);
 
+    // 食物粒子：吃东西时从嘴巴位置飞出食物碎片（MC 原版行为）
+    // pos: 玩家嘴巴位置（眼睛前方偏下）
+    // forward: 玩家朝向
+    // tileIndex: 食物纹理的 tile index
+    void spawnEating(const glm::vec3& pos, const glm::vec3& forward, uint16_t tileIndex);
+
     // === 每帧更新 ===
 
     // 物理更新（重力、碰撞、生命周期）

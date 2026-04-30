@@ -1,0 +1,606 @@
+#include "player_renderer.h"
+#include "texture_atlas.h"
+#include "player/player.h"
+#include "player/inventory.h"
+#include "core/item.h"
+#include "core/block.h"
+#include "world/day_night_cycle.h"
+#include <glm/gtc/matrix_transform.hpp>
+#include <cstring>
+#include <cmath>
+#include <algorithm>
+#include <iostream>
+#include <stb_image.h>
+
+// Steve 皮肤纹理尺寸
+static constexpr int SKIN_TEX_W = 64;
+static constexpr int SKIN_TEX_H = 64;
+
+// Steve 右臂 UV 参数（wide 模型，4像素宽手臂）
+// 右臂在 64x64 皮肤中的位置: UV(40, 16), size 4x12x4
+static constexpr int ARM_UV_X = 40;
+static constexpr int ARM_UV_Y = 16;
+static constexpr int ARM_SX = 4;   // 宽
+static constexpr int ARM_SY = 12;  // 高
+static constexpr int ARM_SZ = 4;   // 深
+
+// ========== 初始化/销毁 ==========
+
+void PlayerRenderer::init(VulkanEngine* engine, const TextureAtlas* blockAtlas) {
+    engine_ = engine;
+    blockAtlas_ = blockAtlas;
+
+    constexpr size_t INITIAL_VERTS = 256;
+    constexpr size_t INITIAL_INDS  = 384;
+    vertexBufferSize_ = sizeof(Vertex) * INITIAL_VERTS;
+    indexBufferSize_  = sizeof(uint32_t) * INITIAL_INDS;
+    vertexBuffer_ = engine_->createDynamicBuffer(vertexBufferSize_, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+    indexBuffer_  = engine_->createDynamicBuffer(indexBufferSize_, VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
+}
+
+void PlayerRenderer::destroy() {
+    if (!engine_) return;
+    if (vertexBuffer_.allocation) {
+        vmaDestroyBuffer(engine_->getAllocator(), vertexBuffer_.buffer, vertexBuffer_.allocation);
+        vertexBuffer_ = {};
+    }
+    if (indexBuffer_.allocation) {
+        vmaDestroyBuffer(engine_->getAllocator(), indexBuffer_.buffer, indexBuffer_.allocation);
+        indexBuffer_ = {};
+    }
+    if (skinImage_.allocation) {
+        engine_->destroyTexture(skinImage_);
+        skinImage_ = {};
+    }
+    engine_ = nullptr;
+}
+
+// ========== 皮肤纹理加载 ==========
+
+bool PlayerRenderer::loadSkinTexture(VulkanEngine& engine, const std::string& skinPath) {
+    // 使用 stbi 加载皮肤 PNG
+    int w, h, ch;
+    uint8_t* data = stbi_load(skinPath.c_str(), &w, &h, &ch, 4);
+    if (!data) {
+        std::cerr << "PlayerRenderer: failed to load skin: " << skinPath << "\n";
+        return false;
+    }
+
+    // 上传到 GPU 纹理
+    skinImage_ = engine.uploadTexture(data, w, h, 4);
+    stbi_image_free(data);
+
+    if (!skinImage_.allocation) {
+        std::cerr << "PlayerRenderer: failed to upload skin texture\n";
+        return false;
+    }
+
+    // 为每帧分配独立的 descriptor set（绑定皮肤纹理）
+    for (int i = 0; i < 2; i++) {
+        descriptorSets_[i] = engine.allocateExtraDescriptorSet(
+            skinImage_.imageView, engine.getDefaultSampler());
+        if (descriptorSets_[i] == VK_NULL_HANDLE) {
+            std::cerr << "PlayerRenderer: failed to allocate descriptor set for frame " << i << "\n";
+            return false;
+        }
+    }
+
+    std::cout << "[PlayerRenderer] Loaded skin: " << skinPath
+              << " (" << w << "x" << h << ")\n";
+    return true;
+}
+
+// ========== 容量管理 ==========
+
+void PlayerRenderer::ensureCapacity() {
+    VkDeviceSize neededV = sizeof(Vertex) * vertices_.size();
+    VkDeviceSize neededI = sizeof(uint32_t) * indices_.size();
+
+    if (neededV > vertexBufferSize_) {
+        if (vertexBuffer_.allocation)
+            vmaDestroyBuffer(engine_->getAllocator(), vertexBuffer_.buffer, vertexBuffer_.allocation);
+        vertexBufferSize_ = neededV * 2;
+        vertexBuffer_ = engine_->createDynamicBuffer(vertexBufferSize_, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+    }
+    if (neededI > indexBufferSize_) {
+        if (indexBuffer_.allocation)
+            vmaDestroyBuffer(engine_->getAllocator(), indexBuffer_.buffer, indexBuffer_.allocation);
+        indexBufferSize_ = neededI * 2;
+        indexBuffer_ = engine_->createDynamicBuffer(indexBufferSize_, VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
+    }
+}
+
+// ========== 辅助函数 ==========
+
+void PlayerRenderer::addFace(glm::vec3 v0, glm::vec3 v1, glm::vec3 v2, glm::vec3 v3,
+                              glm::vec3 normal, float u0, float v0uv, float u1, float v1uv, float light) {
+    uint32_t base = static_cast<uint32_t>(vertices_.size());
+    vertices_.push_back({v0, normal, {u0, v1uv}, light});
+    vertices_.push_back({v1, normal, {u0, v0uv}, light});
+    vertices_.push_back({v2, normal, {u1, v0uv}, light});
+    vertices_.push_back({v3, normal, {u1, v1uv}, light});
+    indices_.push_back(base + 0);
+    indices_.push_back(base + 1);
+    indices_.push_back(base + 2);
+    indices_.push_back(base + 0);
+    indices_.push_back(base + 2);
+    indices_.push_back(base + 3);
+}
+
+// ========== 手臂长方体渲染 ==========
+
+void PlayerRenderer::addArmCuboid(const ArmCuboid& cuboid, const glm::mat4& transform,
+                                   float light, int texW, int texH) {
+    float x0 = cuboid.origin.x;
+    float y0 = cuboid.origin.y;
+    float z0 = cuboid.origin.z;
+    float sx = cuboid.size.x;
+    float sy = cuboid.size.y;
+    float sz = cuboid.size.z;
+
+    // 8 个顶点
+    glm::vec3 corners[8] = {
+        {x0,      y0,      z0},
+        {x0 + sx, y0,      z0},
+        {x0 + sx, y0 + sy, z0},
+        {x0,      y0 + sy, z0},
+        {x0,      y0,      z0 + sz},
+        {x0 + sx, y0,      z0 + sz},
+        {x0 + sx, y0 + sy, z0 + sz},
+        {x0,      y0 + sy, z0 + sz},
+    };
+
+    // 变换到 viewmodel 空间
+    glm::vec3 wc[8];
+    for (int i = 0; i < 8; i++) {
+        glm::vec4 p = transform * glm::vec4(corners[i], 1.0f);
+        wc[i] = glm::vec3(p);
+    }
+
+    int uvX = cuboid.uvX;
+    int uvY = cuboid.uvY;
+    int isx = static_cast<int>(sx);
+    int isy = static_cast<int>(sy);
+    int isz = static_cast<int>(sz);
+
+    float uPixel = 1.0f / texW;
+    float vPixel = 1.0f / texH;
+
+    // MC 标准 UV 展开
+    struct FaceUV { float u0, v0, u1, v1; };
+
+    FaceUV top = {
+        (uvX + isz) * uPixel, uvY * vPixel,
+        (uvX + isz + isx) * uPixel, (uvY + isz) * vPixel
+    };
+    FaceUV bottom = {
+        (uvX + isz + isx) * uPixel, uvY * vPixel,
+        (uvX + isz + isx + isx) * uPixel, (uvY + isz) * vPixel
+    };
+    FaceUV front = {
+        (uvX + isz) * uPixel, (uvY + isz) * vPixel,
+        (uvX + isz + isx) * uPixel, (uvY + isz + isy) * vPixel
+    };
+    FaceUV back = {
+        (uvX + isz + isx + isz) * uPixel, (uvY + isz) * vPixel,
+        (uvX + isz + isx + isz + isx) * uPixel, (uvY + isz + isy) * vPixel
+    };
+    FaceUV leftF = {
+        uvX * uPixel, (uvY + isz) * vPixel,
+        (uvX + isz) * uPixel, (uvY + isz + isy) * vPixel
+    };
+    FaceUV rightF = {
+        (uvX + isz + isx) * uPixel, (uvY + isz) * vPixel,
+        (uvX + isz + isx + isz) * uPixel, (uvY + isz + isy) * vPixel
+    };
+
+    glm::mat3 N = glm::mat3(transform);
+
+    // +Y (top)
+    addFace(wc[7], wc[6], wc[2], wc[3], glm::normalize(N * glm::vec3(0, 1, 0)),
+            top.u0, top.v0, top.u1, top.v1, light);
+    // -Y (bottom)
+    addFace(wc[0], wc[1], wc[5], wc[4], glm::normalize(N * glm::vec3(0, -1, 0)),
+            bottom.u0, bottom.v0, bottom.u1, bottom.v1, light);
+    // -Z (front)
+    addFace(wc[0], wc[3], wc[2], wc[1], glm::normalize(N * glm::vec3(0, 0, -1)),
+            front.u0, front.v0, front.u1, front.v1, light);
+    // +Z (back)
+    addFace(wc[5], wc[6], wc[7], wc[4], glm::normalize(N * glm::vec3(0, 0, 1)),
+            back.u0, back.v0, back.u1, back.v1, light);
+    // -X (left)
+    addFace(wc[4], wc[7], wc[3], wc[0], glm::normalize(N * glm::vec3(-1, 0, 0)),
+            leftF.u0, leftF.v0, leftF.u1, leftF.v1, light);
+    // +X (right)
+    addFace(wc[1], wc[2], wc[6], wc[5], glm::normalize(N * glm::vec3(1, 0, 0)),
+            rightF.u0, rightF.v0, rightF.u1, rightF.v1, light);
+}
+
+// ========== 手持方块渲染 ==========
+
+void PlayerRenderer::addHeldBlock(BlockId blockId, const glm::mat4& transform, float light) {
+    if (!blockAtlas_) return;
+    const auto& blockProps = BlockRegistry::instance().get(blockId);
+
+    // 方块 6 面纹理
+    auto getUV = [&](Direction dir) -> glm::vec4 {
+        uint16_t tile = blockProps.textures.forDirection(dir);
+        return blockAtlas_->getTileUV(tile);
+    };
+
+    // 小方块尺寸（viewmodel 空间中约 0.4 单位）
+    float s = 0.4f;
+    glm::vec3 corners[8] = {
+        {0, 0, 0}, {s, 0, 0}, {s, s, 0}, {0, s, 0},
+        {0, 0, s}, {s, 0, s}, {s, s, s}, {0, s, s},
+    };
+
+    glm::vec3 wc[8];
+    for (int i = 0; i < 8; i++) {
+        glm::vec4 p = transform * glm::vec4(corners[i], 1.0f);
+        wc[i] = glm::vec3(p);
+    }
+
+    glm::mat3 N = glm::mat3(transform);
+
+    auto drawBlockFace = [&](glm::vec3 v0, glm::vec3 v1, glm::vec3 v2, glm::vec3 v3,
+                              glm::vec3 norm, Direction dir) {
+        glm::vec4 uv = getUV(dir);
+        addFace(v0, v1, v2, v3, glm::normalize(N * norm), uv.x, uv.y, uv.z, uv.w, light);
+    };
+
+    drawBlockFace(wc[7], wc[6], wc[2], wc[3], {0, 1, 0}, Direction::PosY);
+    drawBlockFace(wc[0], wc[1], wc[5], wc[4], {0, -1, 0}, Direction::NegY);
+    drawBlockFace(wc[0], wc[3], wc[2], wc[1], {0, 0, -1}, Direction::NegZ);
+    drawBlockFace(wc[5], wc[6], wc[7], wc[4], {0, 0, 1}, Direction::PosZ);
+    drawBlockFace(wc[4], wc[7], wc[3], wc[0], {-1, 0, 0}, Direction::NegX);
+    drawBlockFace(wc[1], wc[2], wc[6], wc[5], {1, 0, 0}, Direction::PosX);
+}
+
+// ========== 手持物品 3D 挤出模型渲染 ==========
+// MC 原版：工具/食物在手中是每个像素都有 1px 厚度的 3D 模型（浮雕效果）
+// 正面和背面使用原始纹理 UV，侧面使用边缘像素的颜色
+
+void PlayerRenderer::addHeldItem3D(const std::string& tileName, const glm::mat4& transform, float light) {
+    if (!blockAtlas_ || tileName.empty()) return;
+
+    uint16_t tileIdx = blockAtlas_->getTileIndex(tileName);
+    glm::vec4 tileUV = blockAtlas_->getTileUV(tileIdx);
+
+    // 获取像素数据
+    const auto& cpuPixels = blockAtlas_->getCpuPixels();
+    uint32_t tileSize = blockAtlas_->getTileSize();
+    uint32_t atlasSize = blockAtlas_->getAtlasPixelSize();
+    uint32_t tilesPerRow = blockAtlas_->getTilesPerRow();
+
+    if (cpuPixels.empty() || atlasSize == 0) {
+        // 回退：如果没有 CPU 像素数据，渲染简单的正反面
+        float w = 0.5f, h = 0.5f;
+        glm::vec3 v0 = glm::vec3(transform * glm::vec4(0, 0, 0, 1));
+        glm::vec3 v1 = glm::vec3(transform * glm::vec4(0, h, 0, 1));
+        glm::vec3 v2 = glm::vec3(transform * glm::vec4(w, h, 0, 1));
+        glm::vec3 v3 = glm::vec3(transform * glm::vec4(w, 0, 0, 1));
+        glm::vec3 normal = glm::normalize(glm::mat3(transform) * glm::vec3(0, 0, -1));
+        addFace(v0, v1, v2, v3, normal, tileUV.x, tileUV.y, tileUV.z, tileUV.w, light);
+        return;
+    }
+
+    // 计算 tile 在图集中的像素起始位置
+    uint32_t tileCol = tileIdx % tilesPerRow;
+    uint32_t tileRow = tileIdx / tilesPerRow;
+    uint32_t tilePixelX = tileCol * tileSize;
+    uint32_t tilePixelY = tileRow * tileSize;
+
+    // 每个像素在 viewmodel 空间中的尺寸
+    float pixelScale = 0.5f / static_cast<float>(tileSize);  // 总宽度 0.5 单位
+    float depth = pixelScale;  // 厚度 = 1 像素宽度（MC 原版）
+
+    // UV 每像素步长
+    float uStep = (tileUV.z - tileUV.x) / static_cast<float>(tileSize);
+    float vStep = (tileUV.w - tileUV.y) / static_cast<float>(tileSize);
+
+    glm::mat3 N = glm::mat3(transform);
+    glm::vec3 frontNormal = glm::normalize(N * glm::vec3(0, 0, -1));
+    glm::vec3 backNormal = glm::normalize(N * glm::vec3(0, 0, 1));
+
+    // 辅助 lambda：获取像素 RGBA
+    auto getPixel = [&](int px, int py) -> uint32_t {
+        if (px < 0 || py < 0 || px >= (int)tileSize || py >= (int)tileSize) return 0;
+        uint32_t ax = tilePixelX + px;
+        uint32_t ay = tilePixelY + py;
+        uint32_t idx = (ay * atlasSize + ax) * 4;
+        if (idx + 3 >= cpuPixels.size()) return 0;
+        uint8_t r = cpuPixels[idx];
+        uint8_t g = cpuPixels[idx + 1];
+        uint8_t b = cpuPixels[idx + 2];
+        uint8_t a = cpuPixels[idx + 3];
+        return (a << 24) | (b << 16) | (g << 8) | r;
+    };
+
+    auto isOpaque = [](uint32_t pixel) -> bool {
+        return (pixel >> 24) >= 128;  // alpha >= 128 视为不透明
+    };
+
+    // 遍历每个像素，生成正面和背面
+    for (uint32_t py = 0; py < tileSize; py++) {
+        for (uint32_t px = 0; px < tileSize; px++) {
+            uint32_t pixel = getPixel(px, py);
+            if (!isOpaque(pixel)) continue;
+
+            // 像素在 viewmodel 空间中的位置
+            // 注意：纹理 Y 轴向下，viewmodel Y 轴向上，所以翻转 Y
+            float x0 = static_cast<float>(px) * pixelScale;
+            float y0 = static_cast<float>(tileSize - 1 - py) * pixelScale;
+            float x1 = x0 + pixelScale;
+            float y1 = y0 + pixelScale;
+
+            // UV 坐标（对应图集中这个像素的位置）
+            float u0 = tileUV.x + static_cast<float>(px) * uStep;
+            float v0uv = tileUV.y + static_cast<float>(py) * vStep;
+            float u1 = u0 + uStep;
+            float v1uv = v0uv + vStep;
+
+            // 正面 (z = 0)
+            glm::vec3 fv0 = glm::vec3(transform * glm::vec4(x0, y0, 0, 1));
+            glm::vec3 fv1 = glm::vec3(transform * glm::vec4(x0, y1, 0, 1));
+            glm::vec3 fv2 = glm::vec3(transform * glm::vec4(x1, y1, 0, 1));
+            glm::vec3 fv3 = glm::vec3(transform * glm::vec4(x1, y0, 0, 1));
+            addFace(fv0, fv1, fv2, fv3, frontNormal, u0, v0uv, u1, v1uv, light);
+
+            // 背面 (z = depth)
+            glm::vec3 bv0 = glm::vec3(transform * glm::vec4(x1, y0, depth, 1));
+            glm::vec3 bv1 = glm::vec3(transform * glm::vec4(x1, y1, depth, 1));
+            glm::vec3 bv2 = glm::vec3(transform * glm::vec4(x0, y1, depth, 1));
+            glm::vec3 bv3 = glm::vec3(transform * glm::vec4(x0, y0, depth, 1));
+            addFace(bv0, bv1, bv2, bv3, backNormal, u1, v0uv, u0, v1uv, light);
+
+            // 侧面：只在边缘处生成（相邻像素为透明时）
+            // 使用当前像素的 UV（侧面颜色 = 边缘像素颜色）
+
+            // 左侧 (-X)
+            if (!isOpaque(getPixel(px - 1, py))) {
+                glm::vec3 lv0 = glm::vec3(transform * glm::vec4(x0, y0, depth, 1));
+                glm::vec3 lv1 = glm::vec3(transform * glm::vec4(x0, y1, depth, 1));
+                glm::vec3 lv2 = glm::vec3(transform * glm::vec4(x0, y1, 0, 1));
+                glm::vec3 lv3 = glm::vec3(transform * glm::vec4(x0, y0, 0, 1));
+                glm::vec3 n = glm::normalize(N * glm::vec3(-1, 0, 0));
+                addFace(lv0, lv1, lv2, lv3, n, u0, v0uv, u0 + uStep * 0.5f, v1uv, light * 0.8f);
+            }
+
+            // 右侧 (+X)
+            if (!isOpaque(getPixel(px + 1, py))) {
+                glm::vec3 rv0 = glm::vec3(transform * glm::vec4(x1, y0, 0, 1));
+                glm::vec3 rv1 = glm::vec3(transform * glm::vec4(x1, y1, 0, 1));
+                glm::vec3 rv2 = glm::vec3(transform * glm::vec4(x1, y1, depth, 1));
+                glm::vec3 rv3 = glm::vec3(transform * glm::vec4(x1, y0, depth, 1));
+                glm::vec3 n = glm::normalize(N * glm::vec3(1, 0, 0));
+                addFace(rv0, rv1, rv2, rv3, n, u1 - uStep * 0.5f, v0uv, u1, v1uv, light * 0.8f);
+            }
+
+            // 上侧 (+Y)
+            if (!isOpaque(getPixel(px, py - 1))) {
+                glm::vec3 tv0 = glm::vec3(transform * glm::vec4(x0, y1, 0, 1));
+                glm::vec3 tv1 = glm::vec3(transform * glm::vec4(x0, y1, depth, 1));
+                glm::vec3 tv2 = glm::vec3(transform * glm::vec4(x1, y1, depth, 1));
+                glm::vec3 tv3 = glm::vec3(transform * glm::vec4(x1, y1, 0, 1));
+                glm::vec3 n = glm::normalize(N * glm::vec3(0, 1, 0));
+                addFace(tv0, tv1, tv2, tv3, n, u0, v0uv, u1, v0uv + vStep * 0.5f, light * 0.9f);
+            }
+
+            // 下侧 (-Y)
+            if (!isOpaque(getPixel(px, py + 1))) {
+                glm::vec3 dv0 = glm::vec3(transform * glm::vec4(x0, y0, depth, 1));
+                glm::vec3 dv1 = glm::vec3(transform * glm::vec4(x0, y0, 0, 1));
+                glm::vec3 dv2 = glm::vec3(transform * glm::vec4(x1, y0, 0, 1));
+                glm::vec3 dv3 = glm::vec3(transform * glm::vec4(x1, y0, depth, 1));
+                glm::vec3 n = glm::normalize(N * glm::vec3(0, -1, 0));
+                addFace(dv0, dv1, dv2, dv3, n, u0, v1uv - vStep * 0.5f, u1, v1uv, light * 0.9f);
+            }
+        }
+    }
+}
+
+// ========== 每帧构建 ==========
+
+void PlayerRenderer::buildFrame(const Player& player, const Inventory& inventory,
+                                 float partialTick, const DayNightCycle* dayNight) {
+    vertices_.clear();
+    indices_.clear();
+
+    if (player.dead) {
+        armIndexCount_  = 0;
+        itemIndexCount_ = 0;
+        return;
+    }
+
+    float skyLight = dayNight ? dayNight->getSkyLightFactor() : 1.0f;
+    float light = skyLight;
+
+    // 获取手持物品
+    const ItemStack& held = inventory.getSlot(inventory.getSelectedSlot());
+
+    // ===== 计算 viewmodel 变换矩阵 =====
+    // MC 原版 viewmodel 的基础位置（右下角，相对于相机）
+    // 这些坐标在 viewmodel 空间中（相机空间，右手坐标系）
+    float baseX = 0.56f;    // 右偏
+    float baseY = -0.52f;   // 下偏
+    float baseZ = -0.72f;   // 前方
+
+    // ===== 挥动动画 (swing) =====
+    // MC 原版 swing 动画：手臂绕肩膀旋转，同时向前伸出
+    float swingProg = glm::mix(player.prevSwingProgress, player.swingProgress, partialTick);
+    float swingAngle = 0.0f;
+    float swingTransX = 0.0f;
+    float swingTransY = 0.0f;
+    float swingTransZ = 0.0f;
+
+    if (swingProg > 0.0f) {
+        // MC 原版 swing 曲线：sin(sqrt(progress) * π) 用于主旋转
+        float sqrtProg = std::sqrt(swingProg);
+        float sinProg = std::sin(sqrtProg * 3.14159265f);
+        float sinProg2 = std::sin(swingProg * swingProg * 3.14159265f);
+
+        // 手臂向前伸出 + 向下挥
+        swingTransX = -sinProg2 * 0.4f;
+        swingTransY = std::sin(sqrtProg * 3.14159265f * 2.0f) * -0.2f;
+        swingTransZ = -sinProg * 0.2f;
+
+        // 旋转角度
+        swingAngle = sinProg * -1.2f;  // 绕 Y 轴旋转（向左挥）
+    }
+
+    // ===== 吃东西动画 =====
+    float eatTransX = 0.0f;
+    float eatTransY = 0.0f;
+    float eatTransZ = 0.0f;
+    float eatRotation = 0.0f;
+
+    if (player.isEating && !held.isEmpty()) {
+        // MC 原版吃东西动画：物品反复靠近嘴巴 + 随机旋转抖动
+        float eatProg = static_cast<float>(player.eatingTicks) / 32.0f;
+        float bobFreq = static_cast<float>(player.eatingTicks) + partialTick;
+        float bob = std::sin(bobFreq * 1.5f) * 0.1f;
+
+        // 物品向上靠近嘴巴（MC 原版：物品移向屏幕中心偏上）
+        eatTransX = -0.4f * eatProg;
+        eatTransY = 0.25f * eatProg + bob * 0.5f;
+        eatTransZ = -0.15f * eatProg;
+
+        // MC 原版：吃东西时物品有随机旋转抖动
+        // 使用 tick 数作为伪随机种子，产生抖动效果
+        float jitterX = std::sin(bobFreq * 3.7f) * 0.15f * eatProg;
+        float jitterY = std::cos(bobFreq * 2.9f) * 0.1f * eatProg;
+        eatRotation = jitterX + jitterY;
+    }
+
+    // ===== 组合变换 =====
+    // viewmodel 的顶点需要在世界空间中生成（因为着色器使用 proj * view * model * pos）
+    // 策略：先在相机局部空间中定义 viewmodel，然后用 view 矩阵的逆矩阵转换到世界空间
+    glm::mat4 invView = glm::inverse(player.getViewMatrix());
+
+    glm::mat4 viewmodel = invView;
+
+    // 基础位置（相机空间中的偏移）
+    viewmodel = viewmodel * glm::translate(glm::mat4(1.0f), glm::vec3(
+        baseX + swingTransX + eatTransX,
+        baseY + swingTransY + eatTransY,
+        baseZ + swingTransZ + eatTransZ
+    ));
+
+    // 挥动旋转（在相机空间中）
+    if (swingAngle != 0.0f) {
+        viewmodel = viewmodel * glm::rotate(glm::mat4(1.0f), swingAngle, glm::vec3(0, 1, 0));
+        viewmodel = viewmodel * glm::rotate(glm::mat4(1.0f), swingAngle * 0.5f, glm::vec3(1, 0, 0));
+    }
+
+    // 吃东西旋转（在相机空间中）
+    if (eatRotation != 0.0f) {
+        viewmodel = viewmodel * glm::rotate(glm::mat4(1.0f), eatRotation, glm::vec3(0, 0, 1));
+    }
+
+    // ===== 渲染手臂 =====
+    armIndexStart_ = 0;
+    if (hasSkinTexture()) {
+        // 手臂缩放：像素坐标 → viewmodel 空间（1/16 缩放）
+        float armScale = 1.0f / 16.0f;
+        glm::mat4 armTransform = viewmodel;
+        armTransform = armTransform * glm::scale(glm::mat4(1.0f), glm::vec3(armScale));
+
+        // 手臂原点：肩膀在 viewmodel 空间的右上方
+        // 手臂从肩膀向下延伸 12 像素
+        ArmCuboid rightArm = {{-2, -12, -2}, {4, 12, 4}, ARM_UV_X, ARM_UV_Y};
+        addArmCuboid(rightArm, armTransform, light, SKIN_TEX_W, SKIN_TEX_H);
+    }
+    armIndexCount_ = static_cast<uint32_t>(indices_.size()) - armIndexStart_;
+
+    // ===== 渲染手持物品 =====
+    itemIndexStart_ = static_cast<uint32_t>(indices_.size());
+    if (!held.isEmpty()) {
+        const auto& itemProps = ItemRegistry::instance().get(held.id);
+
+        // 物品位置：在手臂末端（手的位置）
+        glm::mat4 itemTransform = viewmodel;
+        // 向下偏移到手的位置
+        itemTransform = glm::translate(itemTransform, glm::vec3(0.0f, -0.65f, 0.0f));
+
+        bool isBlock = (itemProps.type == ItemType::Block && itemProps.blockId > 0
+                        && BlockRegistry::instance().get(itemProps.blockId).renderType != BlockRenderType::Cross);
+
+        if (isBlock) {
+            // 方块物品：渲染小方块
+            glm::mat4 blockTransform = itemTransform;
+            // 方块稍微旋转使其看起来更自然
+            blockTransform = glm::rotate(blockTransform, glm::radians(45.0f), glm::vec3(0, 1, 0));
+            blockTransform = glm::translate(blockTransform, glm::vec3(-0.2f, -0.1f, -0.2f));
+            addHeldBlock(itemProps.blockId, blockTransform, light);
+        } else if (!itemProps.iconTileName.empty()) {
+            // 工具/食物/材料：渲染 3D 挤出模型（MC 原版：每个像素都有厚度）
+            glm::mat4 spriteTransform = itemTransform;
+            // MC 原版工具在手中是斜着拿的（约 -45° 绕 Z 轴 + 30° 绕 Y 轴）
+            spriteTransform = glm::rotate(spriteTransform, glm::radians(-45.0f), glm::vec3(0, 0, 1));
+            spriteTransform = glm::rotate(spriteTransform, glm::radians(30.0f), glm::vec3(0, 1, 0));
+            spriteTransform = glm::translate(spriteTransform, glm::vec3(-0.1f, -0.15f, 0.0f));
+            addHeldItem3D(itemProps.iconTileName, spriteTransform, light);
+        }
+    }
+    itemIndexCount_ = static_cast<uint32_t>(indices_.size()) - itemIndexStart_;
+
+    if (indices_.empty()) return;
+
+    ensureCapacity();
+
+    // 更新 descriptor set 的 UBO 绑定
+    if (hasSkinTexture()) {
+        int frameIdx = engine_->getCurrentFrameIndex();
+        auto& frame = engine_->getCurrentFrame();
+        VkDescriptorBufferInfo bufferInfo{};
+        bufferInfo.buffer = frame.uniformBuffer.buffer;
+        bufferInfo.offset = 0;
+        bufferInfo.range = sizeof(UniformBufferObject);
+
+        VkWriteDescriptorSet uboWrite{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+        uboWrite.dstSet = descriptorSets_[frameIdx];
+        uboWrite.dstBinding = 0;
+        uboWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        uboWrite.descriptorCount = 1;
+        uboWrite.pBufferInfo = &bufferInfo;
+
+        vkUpdateDescriptorSets(engine_->getDevice(), 1, &uboWrite, 0, nullptr);
+    }
+
+    // 上传到 GPU
+    void* vData = engine_->mapBuffer(vertexBuffer_);
+    std::memcpy(vData, vertices_.data(), sizeof(Vertex) * vertices_.size());
+    engine_->unmapBuffer(vertexBuffer_);
+
+    void* iData = engine_->mapBuffer(indexBuffer_);
+    std::memcpy(iData, indices_.data(), sizeof(uint32_t) * indices_.size());
+    engine_->unmapBuffer(indexBuffer_);
+}
+
+// ========== 渲染 ==========
+
+void PlayerRenderer::render(VkCommandBuffer cmd, VkPipelineLayout pipelineLayout,
+                             VkDescriptorSet blockAtlasDescSet) {
+    if (armIndexCount_ == 0 && itemIndexCount_ == 0) return;
+
+    VkBuffer vb[] = {vertexBuffer_.buffer};
+    VkDeviceSize offsets[] = {0};
+    vkCmdBindVertexBuffers(cmd, 0, 1, vb, offsets);
+    vkCmdBindIndexBuffer(cmd, indexBuffer_.buffer, 0, VK_INDEX_TYPE_UINT32);
+
+    // 第一批：渲染手臂（使用皮肤纹理）
+    if (armIndexCount_ > 0 && hasSkinTexture()) {
+        int frameIdx = engine_->getCurrentFrameIndex();
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+            pipelineLayout, 0, 1, &descriptorSets_[frameIdx], 0, nullptr);
+        vkCmdDrawIndexed(cmd, armIndexCount_, 1, armIndexStart_, 0, 0);
+    }
+
+    // 第二批：渲染手持物品（使用方块图集纹理）
+    if (itemIndexCount_ > 0 && blockAtlasDescSet != VK_NULL_HANDLE) {
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+            pipelineLayout, 0, 1, &blockAtlasDescSet, 0, nullptr);
+        vkCmdDrawIndexed(cmd, itemIndexCount_, 1, itemIndexStart_, 0, 0);
+    }
+}

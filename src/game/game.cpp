@@ -42,6 +42,7 @@ Game::~Game() {
     entityRenderer_.destroy();
     particleSystem_.destroy();
     mobRenderer_.destroy();
+    playerRenderer_.destroy();
     uiRenderer_.destroy();
     textureAtlas_.destroy(engine_);
     engine_.cleanup();
@@ -173,6 +174,15 @@ void Game::init() {
         std::string mobTexDir = std::string(ASSET_DIR) + "/textures/mobs";
         if (!mobRenderer_.loadMobTextures(engine_, mobTexDir)) {
             std::cerr << "Warning: failed to load mob textures from " << mobTexDir << "\n";
+        }
+    }
+
+    // 初始化第一人称 viewmodel 渲染器
+    playerRenderer_.init(&engine_, &textureAtlas_);
+    {
+        std::string skinPath = std::string(ASSET_DIR) + "/minecraft_vanilla/textures/entity/player/wide/steve.png";
+        if (!playerRenderer_.loadSkinTexture(engine_, skinPath)) {
+            std::cerr << "Warning: failed to load player skin from " << skinPath << "\n";
         }
     }
 
@@ -507,6 +517,7 @@ void Game::update(float dt) {
 
     entityRenderer_.buildFrame(entityManager_, partial);
     mobRenderer_.buildFrame(entityManager_, partial, &dayNightCycle_);
+    playerRenderer_.buildFrame(player_, inventory_, partial, &dayNightCycle_);
 
     // 粒子系统：更新物理 + 构建渲染 mesh
     {
@@ -537,6 +548,9 @@ void Game::gameTick() {
     if (player_.hurtTicks > 0) --player_.hurtTicks;
     if (player_.invulnerableTicks > 0) --player_.invulnerableTicks;
 
+    // 第一人称手臂挥动动画 tick
+    player_.tickSwing();
+
     // 昼夜循环 — 使用 tick clock 的总 tick 数驱动
     dayNightCycle_.setTime(static_cast<uint32_t>(tickClock_.getTotalTicks() % 24000));
 
@@ -558,6 +572,15 @@ void Game::gameTick() {
 
     blockInteraction_.tick(world_, player_, inventory_, entityManager_,
                             leftMouseHeld_, MAX_REACH);
+
+    // 挖掘时持续触发挥动动画（MC 原版行为）
+    {
+        int bx, by, bz;
+        float prog;
+        if (blockInteraction_.getActiveBreak(bx, by, bz, prog)) {
+            player_.startSwing();
+        }
+    }
     entityManager_.tick(world_, player_, inventory_);
 
     // 生物生成与消失
@@ -732,6 +755,11 @@ void Game::handleGameplayInput() {
     // Left mouse
     leftMouseHeld_ = input_.isCursorLocked() && input_.isMouseButtonDown(GLFW_MOUSE_BUTTON_LEFT);
 
+    // MC 原版行为：左键点击时无论是否命中都触发挥动动画（空挥也有动画）
+    if (input_.isCursorLocked() && input_.isMouseButtonPressed(GLFW_MOUSE_BUTTON_LEFT)) {
+        player_.startSwing();
+    }
+
     // Q: drop
     if (input_.isKeyPressed(GLFW_KEY_Q) && input_.isCursorLocked()) {
         ItemStack& held = inventory_.getHeldItem();
@@ -816,6 +844,7 @@ void Game::handleRightClick() {
         if (cellEmpty && !intoSelf) {
             world_.setBlock(px, py, pz, itemProps.blockId);
             inventory_.consumeHeldItem(1);
+            player_.startSwing();  // 放置方块时触发挥动动画
         }
     }
 }
@@ -1194,6 +1223,16 @@ void Game::render(VkCommandBuffer cmd) {
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, engine_.getPipeline());
         // MobRenderer::render 内部会绑定 mob 专用的 descriptor set
         mobRenderer_.render(cmd, engine_.getPipelineLayout());
+        // 恢复方块纹理的 descriptor set
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+            engine_.getPipelineLayout(), 0, 1, &frame.descriptorSet, 0, nullptr);
+    }
+
+    // 第一人称 viewmodel（手臂 + 手持物品）— 在所有世界几何体之后渲染
+    // 使用 viewmodel 专用管线（depthCompareOp = ALWAYS），确保手臂永远不被世界遮挡
+    if (playerRenderer_.hasContent()) {
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, engine_.getViewmodelPipeline());
+        playerRenderer_.render(cmd, engine_.getPipelineLayout(), frame.descriptorSet);
         // 恢复方块纹理的 descriptor set
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
             engine_.getPipelineLayout(), 0, 1, &frame.descriptorSet, 0, nullptr);

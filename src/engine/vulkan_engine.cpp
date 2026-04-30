@@ -533,6 +533,77 @@ void VulkanEngine::createGraphicsPipeline() {
             vkDestroyPipeline(device_, transparentPipeline_, nullptr);
         });
     }
+
+    // --- Viewmodel pipeline (depth test ALWAYS — viewmodel never occluded by world) ---
+    // MC 原版在渲染 viewmodel 前清除深度缓冲，使手臂永远不被世界遮挡。
+    // 在 Vulkan 中，我们用 depthCompareOp = ALWAYS 达到相同效果：
+    // viewmodel 的深度测试总是通过，所以它永远画在世界之上。
+    // depthWrite = ON，这样 viewmodel 自身的面之间仍然正确遮挡。
+    {
+        auto vertModule3 = createShaderModule(std::string(SHADER_DIR) + "/basic.vert.spv");
+        auto fragModule3 = createShaderModule(std::string(SHADER_DIR) + "/basic.frag.spv");
+
+        VkPipelineShaderStageCreateInfo vertStage3{VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO};
+        vertStage3.stage = VK_SHADER_STAGE_VERTEX_BIT;
+        vertStage3.module = vertModule3;
+        vertStage3.pName = "main";
+
+        VkPipelineShaderStageCreateInfo fragStage3{VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO};
+        fragStage3.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+        fragStage3.module = fragModule3;
+        fragStage3.pName = "main";
+
+        VkPipelineShaderStageCreateInfo stages3[] = {vertStage3, fragStage3};
+
+        // Depth: test ALWAYS (always pass), write ON (viewmodel self-occlusion)
+        VkPipelineDepthStencilStateCreateInfo vmDepth{VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO};
+        vmDepth.depthTestEnable = VK_TRUE;
+        vmDepth.depthWriteEnable = VK_TRUE;
+        vmDepth.depthCompareOp = VK_COMPARE_OP_ALWAYS;
+
+        // No blending (opaque viewmodel)
+        VkPipelineColorBlendAttachmentState vmBlend{};
+        vmBlend.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+                                 VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+        vmBlend.blendEnable = VK_FALSE;
+
+        VkPipelineColorBlendStateCreateInfo vmColorBlend{VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
+        vmColorBlend.attachmentCount = 1;
+        vmColorBlend.pAttachments = &vmBlend;
+
+        // No backface culling (viewmodel 手臂内侧也需要可见)
+        VkPipelineRasterizationStateCreateInfo vmRaster{VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO};
+        vmRaster.polygonMode = VK_POLYGON_MODE_FILL;
+        vmRaster.lineWidth = 1.0f;
+        vmRaster.cullMode = VK_CULL_MODE_NONE;
+        vmRaster.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+
+        VkGraphicsPipelineCreateInfo vmPipelineInfo{VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
+        vmPipelineInfo.stageCount = 2;
+        vmPipelineInfo.pStages = stages3;
+        vmPipelineInfo.pVertexInputState = &vertexInput;
+        vmPipelineInfo.pInputAssemblyState = &inputAssembly;
+        vmPipelineInfo.pViewportState = &viewportState;
+        vmPipelineInfo.pRasterizationState = &vmRaster;
+        vmPipelineInfo.pMultisampleState = &multisampling;
+        vmPipelineInfo.pDepthStencilState = &vmDepth;
+        vmPipelineInfo.pColorBlendState = &vmColorBlend;
+        vmPipelineInfo.pDynamicState = &dynamicState;
+        vmPipelineInfo.layout = pipelineLayout_;
+        vmPipelineInfo.renderPass = renderPass_;
+        vmPipelineInfo.subpass = 0;
+
+        if (vkCreateGraphicsPipelines(device_, VK_NULL_HANDLE, 1, &vmPipelineInfo, nullptr, &viewmodelPipeline_) != VK_SUCCESS) {
+            throw std::runtime_error("Failed to create viewmodel pipeline");
+        }
+
+        vkDestroyShaderModule(device_, vertModule3, nullptr);
+        vkDestroyShaderModule(device_, fragModule3, nullptr);
+
+        mainDeletionQueue_.push([this]() {
+            vkDestroyPipeline(device_, viewmodelPipeline_, nullptr);
+        });
+    }
 }
 
 void VulkanEngine::createSkyPipeline() {

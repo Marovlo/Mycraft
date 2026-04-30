@@ -36,6 +36,7 @@
 #include "world/day_night_cycle.h"
 #include "crafting/smelting_recipe.h"
 #include "renderer/mob_renderer.h"
+#include "renderer/player_renderer.h"
 #include "entity/mob_spawner.h"
 #include "ui/game_console.h"
 
@@ -114,6 +115,7 @@ private:
     EntityRenderer   entityRenderer_;
     ParticleSystem   particleSystem_;
     MobRenderer      mobRenderer_;
+    PlayerRenderer   playerRenderer_;
     MobSpawner       mobSpawner_;
     DayNightCycle    dayNightCycle_;
     GameConsole      console_;

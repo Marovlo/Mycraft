@@ -132,37 +132,7 @@ void HUD::draw(float screenW, float screenH, const Inventory& inventory,
         ui_->drawRect(bx, by, barW * p, barH, fill);
     }
 
-    // 4) First-person viewmodel — held item in the lower-right corner.
-    //    Block items: 3D-projected cube (larger than hotbar icon).
-    //    Tool items:  2D sprite.
-    //    Empty hand:  nothing.
-    {
-        const ItemStack& held = inventory.getSlot(inventory.getSelectedSlot());
-        if (!held.isEmpty()) {
-            const auto& heldProps = itemReg.get(held.id);
-            float vmSize = screenH * 0.25f;   // 25% of screen height
-            float baseX = screenW - vmSize - 10.0f * scale;
-            float baseY = screenH - vmSize - 10.0f * scale;
-
-            // Swing animation when mining or eating.
-            float swing = 0.0f;
-            if (breakProgress > 0.0f || isEating) {
-                swing = std::sin(static_cast<float>(gameTicks) * 0.6f) * vmSize * 0.08f;
-            }
-            float drawY = baseY + swing;
-
-            if (heldProps.type == ItemType::Block && heldProps.blockId > 0
-                && BlockRegistry::instance().get(heldProps.blockId).renderType != BlockRenderType::Cross) {
-                blockModel_->enqueueBlockIcon(*ui_, heldProps.blockId, *atlas_,
-                                              baseX, drawY, vmSize);
-            } else if (!heldProps.iconTileName.empty()) {
-                uint16_t tile = atlas_->getTileIndex(heldProps.iconTileName);
-                glm::vec4 uv = atlas_->getTileUV(tile);
-                ui_->drawTexturedRect(baseX, drawY, vmSize, vmSize,
-                                      uv.x, uv.y, uv.z, uv.w);
-            }
-        }
-    }
+    // 4) First-person viewmodel — 已迁移到 PlayerRenderer（3D 手臂 + 手持物品）
 
     // 5) Crosshair last so it sits on top in screen center.
     //    Scale crosshair too so it stays visible on Retina displays.

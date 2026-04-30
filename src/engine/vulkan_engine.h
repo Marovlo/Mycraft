@@ -179,6 +179,9 @@ public:
     // Transparent 3D pipeline (same layout as opaque, but alpha blend + no depth write)
     VkPipeline getTransparentPipeline() const { return transparentPipeline_; }
 
+    // Viewmodel pipeline (depth test ALWAYS — viewmodel never occluded by world geometry)
+    VkPipeline getViewmodelPipeline() const { return viewmodelPipeline_; }
+
     // Sky pipeline (no depth write, no vertex input, fullscreen triangle)
     VkPipeline getSkyPipeline() const { return skyPipeline_; }
     VkPipelineLayout getSkyPipelineLayout() const { return skyPipelineLayout_; }
@@ -252,6 +255,9 @@ private:
 
     // Pipeline (3D world — transparent pass: alpha blend ON, depth write OFF)
     VkPipeline transparentPipeline_ = VK_NULL_HANDLE;
+
+    // Pipeline (viewmodel — depth test ALWAYS, depth write ON, no cull)
+    VkPipeline viewmodelPipeline_ = VK_NULL_HANDLE;
 
     // Pipeline (sky — no depth write, rendered first)
     VkPipelineLayout skyPipelineLayout_ = VK_NULL_HANDLE;

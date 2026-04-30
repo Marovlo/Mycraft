@@ -72,6 +72,37 @@ void Player::respawn() {
     xpLevel = 0;
     xpTotal = 0;
     xpProgress = 0.0f;
+    // 重置动画状态
+    swinging = false;
+    swingTicks = 0;
+    swingProgress = 0.0f;
+    prevSwingProgress = 0.0f;
+}
+
+// ========== 第一人称手臂动画 ==========
+
+void Player::startSwing() {
+    // MC 原版：如果已经在挥动且进度 < 50%，不重新开始（防止连续点击重置动画）
+    if (swinging && swingTicks < swingDuration / 2) return;
+    swinging = true;
+    swingTicks = 0;
+}
+
+void Player::tickSwing() {
+    prevSwingProgress = swingProgress;
+    if (swinging) {
+        ++swingTicks;
+        if (swingTicks >= swingDuration) {
+            swinging = false;
+            swingTicks = 0;
+        }
+    }
+    // 计算归一化进度（用于渲染插值）
+    if (swinging) {
+        swingProgress = static_cast<float>(swingTicks) / static_cast<float>(swingDuration);
+    } else {
+        swingProgress = 0.0f;
+    }
 }
 
 // ========== 经验值系统（MC 原版公式） ==========
@@ -191,6 +222,10 @@ void Player::deserialize(BinaryReader& r) {
     isEating = false;
     hurtTicks = 0;
     attackCooldownTicks = 0;
+    swinging = false;
+    swingTicks = 0;
+    swingProgress = 0.0f;
+    prevSwingProgress = 0.0f;
 }
 
 // ========== Raycasting (DDA algorithm) ==========

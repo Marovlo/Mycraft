@@ -58,6 +58,19 @@ public:
     bool inWater   = false;  // head submerged in water
     bool isSwimming = false; // actively swimming (space in water)
 
+    // ===== 第一人称手臂动画状态 =====
+    // MC 原版 swing 动画：攻击/挖掘时手臂挥动，6 tick 周期
+    bool  swinging       = false;  // 是否正在挥动
+    int   swingTicks     = 0;      // 当前挥动已经过的 tick 数
+    int   swingDuration  = 6;      // 挥动总时长（tick），MC 原版 = 6
+    float swingProgress  = 0.0f;   // 0.0~1.0 归一化挥动进度（含 partialTick 插值）
+    float prevSwingProgress = 0.0f;// 上一 tick 的挥动进度（用于插值）
+
+    // 触发一次挥动动画（攻击生物、挖掘方块、放置方块时调用）
+    void startSwing();
+    // 每 tick 更新挥动状态
+    void tickSwing();
+
     // 经验值系统（MC 原版）
     int  xpLevel      = 0;     // 当前等级
     int  xpTotal      = 0;     // 累计总经验值
