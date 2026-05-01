@@ -155,6 +155,8 @@ void BlockInteraction::tick(World& world, Player& player, Inventory& inventory,
             const auto& itemProps = ItemRegistry::instance().get(slot.id);
             if (itemProps.durability > 0) {
                 slot.useDurability(1, itemProps.durability);
+                // 通知 Game 层标记物品栏脏，同步工具耐久变化给服务器
+                if (onInventoryChanged) onInventoryChanged();
             }
         }
 

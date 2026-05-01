@@ -41,7 +41,7 @@ static constexpr float PICKUP_MAGNET_MIN_SPEED = 5.0f;  // blocks/s at outer edg
 static constexpr float PICKUP_MAGNET_MAX_SPEED = 16.0f; // blocks/s right next to player
 static constexpr float PICKUP_AABB_INFLATE = 0.25f;
 
-void ItemEntity::tick(World& world, EntityManager& /*mgr*/,
+void ItemEntity::tick(World& world, EntityManager& mgr,
                       Player& player, Inventory& inventory) {
     ++tickCount;
 
@@ -117,10 +117,12 @@ void ItemEntity::tick(World& world, EntityManager& /*mgr*/,
         if (stack.count == 0) {
             // MC 原版：拾取物品播放 pop 音效
             getSoundEngine().play(SoundEventId::ItemPickup, position, 0.3f);
+            mgr.notifyItemPickup();  // 通知 Game 层标记物品栏脏，同步给服务器
             alive = false;
         } else if (leftover < before) {
             // 部分拾取也播放音效
             getSoundEngine().play(SoundEventId::ItemPickup, position, 0.3f);
+            mgr.notifyItemPickup();  // 部分拾取也需要同步
         }
     }
 }

@@ -99,14 +99,15 @@ private:
     void handlePlayerAction(uint32_t senderId, PacketBuffer& buf);
     void handleBlockDig(uint32_t senderId, PacketBuffer& buf);
     void handleBlockPlace(uint32_t senderId, PacketBuffer& buf);
-
-    // 获取或加载区块（先查内存，再查存档，最后地形生成）
-    Chunk& getOrLoadChunk(int cx, int cz);
     void handleBlockUse(uint32_t senderId, PacketBuffer& buf);
+    void handleInventoryUpdate(uint32_t senderId, PacketBuffer& buf);
     void handleChatMessage(uint32_t senderId, PacketBuffer& buf);
     void handleKeepAlive(uint32_t senderId, PacketBuffer& buf);
     void handleHeldItemChange(uint32_t senderId, PacketBuffer& buf);
     void handleDisconnect(uint32_t senderId);
+
+    // 获取或加载区块（先查内存，再查存档，最后地形生成）
+    Chunk& getOrLoadChunk(int cx, int cz);
 
     // === 世界同步 ===
     void sendWorldInfo(uint32_t playerId);

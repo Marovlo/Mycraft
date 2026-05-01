@@ -48,6 +48,7 @@ enum class PacketType : uint8_t {
     S2C_SlotChange      = 0x51,  // 单个槽位变更
     C2S_SlotClick       = 0x52,  // 客户端点击槽位操作
     C2S_HeldItemChange  = 0x53,  // 切换手持物品栏位
+    C2S_InventoryUpdate = 0x54,  // 客户端上报完整背包状态（拾取/挖方块/合成后）
 
     // === 生存状态 ===
     S2C_HealthUpdate    = 0x58,  // 生命值/饥饿值/经验同步

@@ -1,5 +1,6 @@
 #include "network/client_connection.h"
 #include "core/debug.h"
+#include "player/inventory.h"
 
 #include <iostream>
 
@@ -152,6 +153,21 @@ void ClientConnection::sendHeldItemChange(uint8_t slot) {
     PacketBuffer buf;
     buf.writeU8(slot);
     network_.sendToServer(PacketType::C2S_HeldItemChange, buf, NetChannel::Reliable);
+}
+
+void ClientConnection::sendInventoryUpdate(const Inventory& inventory) {
+    if (!loggedIn_) return;
+
+    // 格式与 S2C_InventorySync 一致：slotCount(1B) + 36 * [itemId(2B) count(2B) durability(2B)]
+    PacketBuffer buf;
+    buf.writeU8(36);
+    for (int i = 0; i < 36; i++) {
+        const ItemStack& slot = inventory.getSlot(i);
+        buf.writeU16(static_cast<uint16_t>(slot.id));
+        buf.writeU16(slot.count);
+        buf.writeU16(slot.durability);
+    }
+    network_.sendToServer(PacketType::C2S_InventoryUpdate, buf, NetChannel::Reliable);
 }
 
 // === 获取数据 ===

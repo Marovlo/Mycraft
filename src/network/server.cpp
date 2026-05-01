@@ -263,6 +263,9 @@ void Server::processPackets() {
             case PacketType::C2S_HeldItemChange:
                 handleHeldItemChange(pkt.senderId, buf);
                 break;
+            case PacketType::C2S_InventoryUpdate:
+                handleInventoryUpdate(pkt.senderId, buf);
+                break;
             case PacketType::C2S_Disconnect:
                 handleDisconnect(pkt.senderId);
                 break;
@@ -410,6 +413,12 @@ void Server::handleBlockDig(uint32_t senderId, PacketBuffer& buf) {
         // 更新服务器世界状态并广播
         world_.setBlock(x, y, z, 0);  // setBlock 内部会 markModified
         broadcastBlockChange(x, y, z, 0);
+
+        // 验证区块已被标记为 modified
+        Chunk* chunk = world_.getChunk(x >> 4, z >> 4);
+        std::cout << "[Server] BlockDig at (" << x << "," << y << "," << z
+                  << ") chunk=(" << (x>>4) << "," << (z>>4) << ") modified="
+                  << (chunk ? chunk->isModified() : -1) << "\n";
     }
 }
 
@@ -464,6 +473,28 @@ void Server::handleHeldItemChange(uint32_t senderId, PacketBuffer& buf) {
     auto it = players_.find(senderId);
     if (it != players_.end()) {
         it->second.selectedSlot = slot;
+    }
+}
+
+void Server::handleInventoryUpdate(uint32_t senderId, PacketBuffer& buf) {
+    // 客户端上报完整背包状态（拾取物品/挖方块/合成后）
+    // 格式：[slotCount: u8][itemId: u16][count: u16][durability: u16] × slotCount
+    uint8_t slotCount = buf.readU8();
+    if (slotCount != 36) return;
+
+    std::lock_guard<std::mutex> lock(playersMutex_);
+    auto it = players_.find(senderId);
+    if (it == players_.end()) return;
+
+    Inventory& inv = it->second.inventory;
+    for (int i = 0; i < 36; i++) {
+        uint16_t itemId     = buf.readU16();
+        uint16_t count      = buf.readU16();
+        uint16_t durability = buf.readU16();
+        ItemStack& slot = inv.getSlot(i);
+        slot.id         = static_cast<ItemId>(itemId);
+        slot.count      = count;
+        slot.durability = durability;
     }
 }
 
@@ -638,10 +669,15 @@ void Server::onPlayerDisconnect(uint32_t playerId) {
     }
 
     // 玩家断开时立即保存所有 dirty 区块（不等自动保存间隔）
-    int savedChunks = saveManager_.saveAllDirtyChunks(world_);
-    if (savedChunks > 0) {
-        std::cout << "[Server] Saved " << savedChunks << " modified chunks on player disconnect\n";
+    // 统计 dirty 区块数量用于调试
+    int dirtyCount = 0;
+    for (auto& [key, chunk] : world_.chunks()) {
+        if (chunk.isModified()) ++dirtyCount;
     }
+    std::cout << "[Server] Disconnect: " << dirtyCount << " dirty chunks in memory\n";
+
+    int savedChunks = saveManager_.saveAllDirtyChunks(world_);
+    std::cout << "[Server] Saved " << savedChunks << " modified chunks on player disconnect\n";
 }
 
 void Server::broadcastPlayerJoin(uint32_t playerId) {

@@ -278,6 +278,9 @@ private:
     int positionSendTimer_ = 0;
     static constexpr int POSITION_SEND_INTERVAL = 1;  // 每 tick 发送
 
+    // 物品栏脏标记：多人模式下物品栏变化时置 true，下一次 processNetworkSync 时上报服务器
+    bool inventoryDirty_ = false;
+
     // ===== F5 视角切换系统 =====
     CameraMode cameraMode_ = CameraMode::FirstPerson;
     static constexpr float THIRD_PERSON_DISTANCE = 4.0f;  // 第三人称相机距离（方块）

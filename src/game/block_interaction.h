@@ -27,6 +27,11 @@ public:
     using BlockBrokenCallback = std::function<void(BlockId, int, int, int, EntityManager&)>;
     BlockBrokenCallback onBlockBroken;
 
+    // Optional callback invoked when the held tool's durability changes (or breaks).
+    // Used by Game to mark inventory dirty and sync to server.
+    using InventoryChangedCallback = std::function<void()>;
+    InventoryChangedCallback onInventoryChanged;
+
     // Called from Game::gameTick(). Reach is the maximum interaction distance
     // (matches Player::MAX_REACH). `entityMgr` is where drops are spawned.
     void tick(World& world, Player& player, Inventory& inventory,

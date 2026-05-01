@@ -6,6 +6,7 @@
 #include "xp_orb_entity.h"
 #include <memory>
 #include <vector>
+#include <functional>
 
 class World;
 class Player;
@@ -38,8 +39,15 @@ public:
     // Direct insertion (used by save/load to restore persisted entities)
     void addEntity(std::unique_ptr<Entity> e) { entities_.push_back(std::move(e)); }
 
+    // 物品拾取回调：拾取成功时触发（用于通知 Game 层标记物品栏脏）
+    using ItemPickupCallback = std::function<void()>;
+    void setOnItemPickup(ItemPickupCallback cb) { onItemPickup_ = std::move(cb); }
+    void notifyItemPickup() { if (onItemPickup_) onItemPickup_(); }
+
 private:
     std::vector<std::unique_ptr<Entity>> entities_;
     // 性能优化：缓存活跃生物索引，避免每帧在 O(n²) 碰撞中重复判断
     std::vector<size_t> activeMobs_;
+
+    ItemPickupCallback onItemPickup_;
 };

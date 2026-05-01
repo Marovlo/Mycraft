@@ -3,6 +3,7 @@
 #include "network/network_manager.h"
 #include "network/packet_types.h"
 #include "network/packet_buffer.h"
+#include "player/inventory.h"
 
 #include <string>
 #include <vector>
@@ -77,6 +78,7 @@ public:
     void sendPlayerAction(PlayerActionType action);
     void sendChatMessage(const std::string& message);
     void sendHeldItemChange(uint8_t slot);
+    void sendInventoryUpdate(const Inventory& inventory);  // 物品栏变化时上报给服务器
 
     // === 获取服务器数据 ===
     uint32_t getLocalPlayerId() const { return localPlayerId_; }

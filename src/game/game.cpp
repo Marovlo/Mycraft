@@ -145,6 +145,11 @@ void Game::registerBlockInteractions() {
                 entityMgr.spawnItem(centre, contents.outputSlot);
         }
     };
+
+    // 注册工具耐久消耗回调：挖方块时工具耐久变化，标记物品栏脏同步给服务器
+    blockInteraction_.onInventoryChanged = [this]() {
+        inventoryDirty_ = true;
+    };
 }
 
 // ============================================================
@@ -308,6 +313,11 @@ void Game::enterWorld(const std::string& worldName, int64_t seed) {
             slot.durability = durability;
         }
         std::cout << "[Save] Inventory synced from server\n";
+    });
+
+    // 注册物品拾取回调（单人模式下 inventoryDirty_ 会触发服务器同步）
+    entityManager_.setOnItemPickup([this]() {
+        inventoryDirty_ = true;
     });
 
     // 设置存档目录（用于 chests/furnaces/entities 等世界数据）
@@ -546,6 +556,11 @@ void Game::connectToServer(const std::string& host, uint16_t port, const std::st
         std::cout << "[Save] Inventory synced from server\n";
     });
 
+    // 注册物品拾取回调：拾取物品时标记物品栏脏，下一帧同步给服务器
+    entityManager_.setOnItemPickup([this]() {
+        inventoryDirty_ = true;
+    });
+
     if (!clientConnection_->connect(host, port, playerName)) {
         std::cerr << "[Game] Failed to connect to server\n";
         connectStatus_ = "Connection failed";
@@ -678,6 +693,12 @@ void Game::processNetworkSync() {
     if (positionSendTimer_ >= POSITION_SEND_INTERVAL) {
         positionSendTimer_ = 0;
         conn->sendPosition(player_.position, player_.yaw, player_.pitch, player_.onGround);
+    }
+
+    // 多人模式：物品栏变化时上报服务器
+    if (inventoryDirty_) {
+        inventoryDirty_ = false;
+        conn->sendInventoryUpdate(inventory_);
     }
 }
 
@@ -1431,6 +1452,7 @@ void Game::handleGameplayInput() {
                 inventory_.consumeItem(id, static_cast<uint16_t>(cnt));
             }
             inventory_.addItem(r->output);
+            inventoryDirty_ = true;  // 合成物品，通知服务器
             VLOG(DebugCat::Input, "crafted %s x%u",
                  ItemRegistry::instance().get(r->output.id).displayName.c_str(),
                  r->output.count);
@@ -1503,6 +1525,7 @@ void Game::handleRightClick() {
         if (cellEmpty && !intoSelf) {
             world_.setBlock(px, py, pz, itemProps.blockId);
             inventory_.consumeHeldItem(1);
+            inventoryDirty_ = true;  // 放置方块消耗物品，通知服务器
             player_.startSwing();  // 放置方块时触发挥动动画
 
             // 播放方块放置音效
@@ -1531,6 +1554,7 @@ void Game::releaseBow() {
 
     // 消耗一支箭矢
     inventory_.consumeItem(Item::Arrow, 1);
+    inventoryDirty_ = true;  // 消耗箭矢，通知服务器
 
     // 从玩家眼睛位置沿视线方向射出
     glm::vec3 eyePos = player_.getEyePosition();
@@ -1560,6 +1584,7 @@ void Game::releaseBow() {
     if (inventory_.getHeldItem().durability == 0 && inventory_.getHeldItem().id == Item::Bow) {
         // 弓损坏
         inventory_.consumeHeldItem(1);
+        inventoryDirty_ = true;  // 弓损坏，通知服务器
         getSoundEngine().play(SoundEventId::GlassBreak, player_.position, 0.8f);
     }
 
