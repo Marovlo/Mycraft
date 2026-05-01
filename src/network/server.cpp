@@ -259,50 +259,53 @@ void Server::handleLogin(uint32_t senderId, PacketBuffer& buf) {
     network_.setClientAuthenticated(senderId, playerName);
 
     // 创建服务端玩家状态，尝试从存档加载
-    {
-        std::lock_guard<std::mutex> lock(playersMutex_);
-        ServerPlayer player;
-        player.playerId = senderId;
-        player.name = playerName;
-        player.position = glm::vec3(0.0f, 80.0f, 0.0f);  // 默认出生点
+    // 注意：在锁外完成 IO（loadPlayerByName），只在写入 players_ 时加锁
+    ServerPlayer newPlayer;
+    newPlayer.playerId = senderId;
+    newPlayer.name = playerName;
+    newPlayer.position = glm::vec3(0.0f, 80.0f, 0.0f);  // 默认出生点
 
-        // 从存档加载玩家数据
+    {
         Player tmpPlayer;
         Inventory tmpInventory;
         if (saveManager_.loadPlayerByName(playerName, tmpPlayer, tmpInventory)) {
-            player.position = tmpPlayer.position;
-            player.yaw = tmpPlayer.yaw;
-            player.pitch = tmpPlayer.pitch;
-            player.health = tmpPlayer.hp;
-            player.hunger = static_cast<float>(tmpPlayer.hunger);
-            player.saturation = tmpPlayer.saturation;
-            player.inventory = tmpInventory;
+            newPlayer.position = tmpPlayer.position;
+            newPlayer.yaw = tmpPlayer.yaw;
+            newPlayer.pitch = tmpPlayer.pitch;
+            newPlayer.health = tmpPlayer.hp;
+            newPlayer.hunger = static_cast<float>(tmpPlayer.hunger);
+            newPlayer.saturation = tmpPlayer.saturation;
+            newPlayer.inventory = tmpInventory;
             std::cout << "[Server] Loaded player '" << playerName << "' at ("
-                      << player.position.x << ", " << player.position.y << ", "
-                      << player.position.z << ")\n";
+                      << newPlayer.position.x << ", " << newPlayer.position.y << ", "
+                      << newPlayer.position.z << ")\n";
         } else {
             // 新玩家：计算地形高度作为出生点
             if (terrainGen_) {
                 auto* gen = dynamic_cast<OverworldGenerator*>(terrainGen_.get());
                 int surfaceY = gen ? gen->getTerrainHeight(0, 0) : 64;
                 int spawnY = std::max(surfaceY, 63) + 2;  // +2 确保在地面上方
-                player.position = glm::vec3(0.5f, static_cast<float>(spawnY), 0.5f);
+                newPlayer.position = glm::vec3(0.5f, static_cast<float>(spawnY), 0.5f);
             }
             // 给新玩家初始物品
-            player.inventory.getSlot(0) = {Item::IronPickaxe,  1, 0};
-            player.inventory.getSlot(1) = {Item::WoodenAxe,     1, 0};
-            player.inventory.getSlot(2) = {Item::WoodenShovel,  1, 0};
-            player.inventory.getSlot(3) = {Item::WoodenPickaxe, 1, 0};
-            player.inventory.getSlot(4) = {Item::Torch,         64, 0};
+            newPlayer.inventory.getSlot(0) = {Item::IronPickaxe,  1, 0};
+            newPlayer.inventory.getSlot(1) = {Item::WoodenAxe,     1, 0};
+            newPlayer.inventory.getSlot(2) = {Item::WoodenShovel,  1, 0};
+            newPlayer.inventory.getSlot(3) = {Item::WoodenPickaxe, 1, 0};
+            newPlayer.inventory.getSlot(4) = {Item::Torch,         64, 0};
             std::cout << "[Server] New player '" << playerName << "', starting at ("
-                      << player.position.x << ", " << player.position.y << ", "
-                      << player.position.z << ")\n";
+                      << newPlayer.position.x << ", " << newPlayer.position.y << ", "
+                      << newPlayer.position.z << ")\n";
         }
-
-        players_[senderId] = player;
     }
 
-    // 发送登录成功
+    // 写入 players_ map（加锁）
+    {
+        std::lock_guard<std::mutex> lock(playersMutex_);
+        players_[senderId] = std::move(newPlayer);
+    }
+
+    // 发送登录成功（不持锁）
     {
         PacketBuffer resp;
         resp.writeU32(senderId);
