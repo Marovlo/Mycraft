@@ -251,6 +251,19 @@ bool SaveManager::loadChunk(int chunkX, int chunkZ, Chunk& chunk) {
     return ChunkSerializer::deserialize(data.data(), data.size(), chunk);
 }
 
+bool SaveManager::hasChunk(int chunkX, int chunkZ) {
+    int rx = RegionFile::chunkToRegion(chunkX);
+    int rz = RegionFile::chunkToRegion(chunkZ);
+    int lx = RegionFile::chunkToLocal(chunkX);
+    int lz = RegionFile::chunkToLocal(chunkZ);
+
+    std::string path = regionDir_ + "/" + RegionFile::regionFilename(rx, rz);
+    if (!fileExists(path)) return false;
+
+    auto& region = getRegion(rx, rz);
+    return region.hasChunk(lx, lz);
+}
+
 int SaveManager::saveAllDirtyChunks(World& world) {
     int count = 0;
     for (auto& [key, chunk] : world.chunks()) {

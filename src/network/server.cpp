@@ -568,18 +568,28 @@ void Server::sendChunksToPlayer(uint32_t playerId) {
             uint64_t key = (static_cast<uint64_t>(static_cast<uint32_t>(cx)) << 32) |
                            static_cast<uint64_t>(static_cast<uint32_t>(cz));
 
-            // 检查服务器内存中是否有该区块且已被修改
-            Chunk* chunk = world_.getChunk(cx, cz);
-            if (!chunk || !chunk->isModified()) {
-                // 未修改的区块客户端自己用种子生成，只需记录 AOI
+            // 已发送过的区块跳过
+            if (player.loadedChunks.count(key)) continue;
+
+            // 判断该区块是否有存档数据（曾被玩家修改过）
+            // 有存档的区块必须发给客户端，不能让客户端用种子自行生成
+            bool hasSavedData = saveManager_.hasChunk(cx, cz);
+            if (!hasSavedData) {
+                // 纯地形区块，客户端自己用种子生成即可
                 player.loadedChunks.insert(key);
                 continue;
             }
 
-            // 该区块已被修改，需要发送给客户端
-            // 用 loadedChunks 记录「已发送 modified 版本」的区块
-            // 每次 modified 区块进入视距都发送（重连后 loadedChunks 是空的）
-            if (player.loadedChunks.count(key)) continue;  // 本次连接已发过
+            // 确保区块在内存中（从磁盘加载）
+            Chunk* chunk = world_.getChunk(cx, cz);
+            if (!chunk) {
+                getOrLoadChunk(cx, cz);
+                chunk = world_.getChunk(cx, cz);
+            }
+            if (!chunk) {
+                player.loadedChunks.insert(key);
+                continue;
+            }
 
             // 发送原始方块数据（客户端期望 blockCount 字节的原始数据）
             size_t blockBytes = static_cast<size_t>(Chunk::blockCount()) * sizeof(BlockId);

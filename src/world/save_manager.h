@@ -70,6 +70,10 @@ public:
     // On success, chunk is filled with block data (but NO lighting — caller must init).
     bool loadChunk(int chunkX, int chunkZ, Chunk& chunk);
 
+    // Check if a chunk has saved data on disk (i.e., was ever modified by a player).
+    // Does NOT load the chunk into memory.
+    bool hasChunk(int chunkX, int chunkZ);
+
     // Save all modified chunks from the world.
     // Returns number of chunks saved.
     int saveAllDirtyChunks(World& world);
