@@ -80,7 +80,29 @@ void Server::stop() {
 
     // 保存世界
     std::cout << "[Server] Saving world..." << std::endl;
-    // TODO: 保存所有脏区块和玩家数据
+
+    // 保存所有在线玩家数据
+    {
+        std::lock_guard<std::mutex> lock(playersMutex_);
+        for (auto& [id, sp] : players_) {
+            Player tmpPlayer;
+            tmpPlayer.position = sp.position;
+            tmpPlayer.yaw = sp.yaw;
+            tmpPlayer.pitch = sp.pitch;
+            tmpPlayer.hp = sp.health;
+            tmpPlayer.hunger = static_cast<int>(sp.hunger);
+            tmpPlayer.saturation = sp.saturation;
+            tmpPlayer.spawnPoint = sp.position;
+            saveManager_.savePlayerByName(sp.name, tmpPlayer, sp.inventory);
+        }
+    }
+
+    // 保存所有修改过的区块
+    int savedChunks = saveManager_.saveAllDirtyChunks(world_);
+    if (savedChunks > 0) {
+        std::cout << "[Server] Saved " << savedChunks << " modified chunks" << std::endl;
+    }
+    saveManager_.closeAllRegions();
 
     // 断开所有客户端
     network_.stopServer();
@@ -353,6 +375,28 @@ void Server::handlePlayerAction(uint32_t senderId, PacketBuffer& buf) {
     network_.broadcastExcept(senderId, PacketType::S2C_PlayerAction, broadcast, NetChannel::Reliable);
 }
 
+// 获取或加载区块：先查内存，再查存档，最后用地形生成器生成
+// 生成的纯地形区块不标记 modified（不需要保存），只有玩家修改后才标记
+Chunk& Server::getOrLoadChunk(int cx, int cz) {
+    Chunk* existing = world_.getChunk(cx, cz);
+    if (existing) return *existing;
+
+    Chunk& chunk = world_.getOrCreateChunk(cx, cz);
+
+    // 先尝试从存档加载
+    if (saveManager_.loadChunk(cx, cz, chunk)) {
+        chunk.clearModified();  // 从磁盘加载的，不需要重新保存
+        return chunk;
+    }
+
+    // 存档中没有，用地形生成器生成
+    if (terrainGen_) {
+        terrainGen_->generate(chunk);
+    }
+    chunk.clearModified();  // 纯地形，不需要保存
+    return chunk;
+}
+
 void Server::handleBlockDig(uint32_t senderId, PacketBuffer& buf) {
     auto action = static_cast<PlayerActionType>(buf.readU8());
     int32_t x = buf.readI32();
@@ -360,14 +404,12 @@ void Server::handleBlockDig(uint32_t senderId, PacketBuffer& buf) {
     int32_t z = buf.readI32();
 
     if (action == PlayerActionType::FinishDigging) {
-        // 广播方块变更给其他客户端（当前信任客户端，后续可加强验证）
-        broadcastBlockChange(x, y, z, 0);
+        // 确保区块在内存中（从存档加载或生成）
+        getOrLoadChunk(x >> 4, z >> 4);
 
-        // 更新服务器世界状态（如果区块存在）
-        Chunk* chunk = world_.getChunk(x >> 4, z >> 4);
-        if (chunk) {
-            world_.setBlock(x, y, z, 0);
-        }
+        // 更新服务器世界状态并广播
+        world_.setBlock(x, y, z, 0);  // setBlock 内部会 markModified
+        broadcastBlockChange(x, y, z, 0);
     }
 }
 
@@ -377,14 +419,12 @@ void Server::handleBlockPlace(uint32_t senderId, PacketBuffer& buf) {
     int32_t z = buf.readI32();
     uint8_t blockId = buf.readU8();
 
-    // 广播方块变更给其他客户端（当前信任客户端，后续可加强验证）
-    broadcastBlockChange(x, y, z, blockId);
+    // 确保区块在内存中（从存档加载或生成）
+    getOrLoadChunk(x >> 4, z >> 4);
 
-    // 更新服务器世界状态（如果区块存在）
-    Chunk* chunk = world_.getChunk(x >> 4, z >> 4);
-    if (chunk) {
-        world_.setBlock(x, y, z, blockId);
-    }
+    // 更新服务器世界状态并广播
+    world_.setBlock(x, y, z, blockId);  // setBlock 内部会 markModified
+    broadcastBlockChange(x, y, z, blockId);
 }
 
 void Server::handleBlockUse(uint32_t senderId, PacketBuffer& buf) {
@@ -620,18 +660,25 @@ void Server::tickAutoSave() {
         std::cout << "[Server] Auto-saving..." << std::endl;
 
         // 保存所有在线玩家数据
-        std::lock_guard<std::mutex> lock(playersMutex_);
-        for (auto& [id, sp] : players_) {
-            Player tmpPlayer;
-            tmpPlayer.position = sp.position;
-            tmpPlayer.yaw = sp.yaw;
-            tmpPlayer.pitch = sp.pitch;
-            tmpPlayer.hp = sp.health;
-            tmpPlayer.hunger = static_cast<int>(sp.hunger);
-            tmpPlayer.saturation = sp.saturation;
-            tmpPlayer.spawnPoint = sp.position;
+        {
+            std::lock_guard<std::mutex> lock(playersMutex_);
+            for (auto& [id, sp] : players_) {
+                Player tmpPlayer;
+                tmpPlayer.position = sp.position;
+                tmpPlayer.yaw = sp.yaw;
+                tmpPlayer.pitch = sp.pitch;
+                tmpPlayer.hp = sp.health;
+                tmpPlayer.hunger = static_cast<int>(sp.hunger);
+                tmpPlayer.saturation = sp.saturation;
+                tmpPlayer.spawnPoint = sp.position;
+                saveManager_.savePlayerByName(sp.name, tmpPlayer, sp.inventory);
+            }
+        }
 
-            saveManager_.savePlayerByName(sp.name, tmpPlayer, sp.inventory);
+        // 保存所有修改过的区块
+        int savedChunks = saveManager_.saveAllDirtyChunks(world_);
+        if (savedChunks > 0) {
+            std::cout << "[Server] Auto-saved " << savedChunks << " modified chunks" << std::endl;
         }
     }
 }
