@@ -271,38 +271,73 @@ cmd_build() {
     local cmake_extra=()
     if $server_only; then
         cmake_extra+=(-DMYCRAFT_SERVER_ONLY=ON)
-        info "Configuring (${build_type}, target: ${target}, SERVER-ONLY: skip Vulkan/GLFW)..."
-    else
-        info "Configuring (${build_type}, target: ${target})..."
     fi
-    local cmake_log="${BUILD_DIR}/cmake_configure.log"
-    if cmake "$SCRIPT_DIR" -DCMAKE_BUILD_TYPE="$build_type" "${cmake_extra[@]}" > "$cmake_log" 2>&1; then
-        # 成功：只显示关键摘要
-        grep -E "^-- (Configuring done|Generating done|Build files|Found Vulkan|Using glslc)" "$cmake_log" | while read -r line; do
-            echo "  $line"
-        done
-        ok "Configuration complete"
+
+    # 判断是否需要重新 configure：
+    #   1. CMakeCache.txt 不存在（首次构建）
+    #   2. CMakeLists.txt 比 CMakeCache.txt 更新
+    #   3. BUILD_TYPE 与缓存中不一致
+    #   4. SERVER_ONLY 标志与缓存中不一致
+    local need_configure=false
+    local cache_file="${BUILD_DIR}/CMakeCache.txt"
+    if [ ! -f "$cache_file" ]; then
+        need_configure=true
+    elif [ "$SCRIPT_DIR/CMakeLists.txt" -nt "$cache_file" ]; then
+        need_configure=true
     else
-        # 失败：显示完整错误
-        echo ""
-        fail_no_exit "CMake configuration failed! Full log:"
-        echo "────────────────────────────────────────"
-        cat "$cmake_log"
-        echo "────────────────────────────────────────"
-        echo ""
-        # 检测常见错误并给出建议
-        if grep -q "FetchContent" "$cmake_log" && grep -qi "error\|fatal\|failed" "$cmake_log"; then
-            warn "Looks like a dependency download failed. Possible fixes:"
-            echo "  1. Check your internet connection"
-            echo "  2. If behind a proxy: git config --global http.proxy http://host:port"
-            echo "  3. If in China: git config --global url.\"https://ghproxy.com/https://github.com\".insteadOf \"https://github.com\""
-            echo "  4. Retry: ./mycraft.sh build --clean"
-        elif grep -q "glslc not found" "$cmake_log"; then
-            warn "Vulkan SDK not installed. Run: ./mycraft.sh setup"
-        elif grep -q "Could NOT find Vulkan" "$cmake_log"; then
-            warn "Vulkan SDK not found. Run: ./mycraft.sh setup"
+        # 检查 BUILD_TYPE 是否变化
+        local cached_type
+        cached_type=$(grep -m1 "^CMAKE_BUILD_TYPE:STRING=" "$cache_file" 2>/dev/null | cut -d= -f2)
+        if [ "$cached_type" != "$build_type" ]; then
+            need_configure=true
         fi
-        exit 1
+        # 检查 SERVER_ONLY 是否变化
+        local cached_server_only
+        cached_server_only=$(grep -m1 "^MYCRAFT_SERVER_ONLY:BOOL=" "$cache_file" 2>/dev/null | cut -d= -f2)
+        if $server_only && [ "$cached_server_only" != "ON" ]; then
+            need_configure=true
+        elif ! $server_only && [ "$cached_server_only" = "ON" ]; then
+            need_configure=true
+        fi
+    fi
+
+    local cmake_log="${BUILD_DIR}/cmake_configure.log"
+    if $need_configure; then
+        if $server_only; then
+            info "Configuring (${build_type}, target: ${target}, SERVER-ONLY: skip Vulkan/GLFW)..."
+        else
+            info "Configuring (${build_type}, target: ${target})..."
+        fi
+        if cmake "$SCRIPT_DIR" -DCMAKE_BUILD_TYPE="$build_type" "${cmake_extra[@]}" > "$cmake_log" 2>&1; then
+            # 成功：只显示关键摘要
+            grep -E "^-- (Configuring done|Generating done|Build files|Found Vulkan|Using glslc)" "$cmake_log" | while read -r line; do
+                echo "  $line"
+            done
+            ok "Configuration complete"
+        else
+            # 失败：显示完整错误
+            echo ""
+            fail_no_exit "CMake configuration failed! Full log:"
+            echo "────────────────────────────────────────"
+            cat "$cmake_log"
+            echo "────────────────────────────────────────"
+            echo ""
+            # 检测常见错误并给出建议
+            if grep -q "FetchContent" "$cmake_log" && grep -qi "error\|fatal\|failed" "$cmake_log"; then
+                warn "Looks like a dependency download failed. Possible fixes:"
+                echo "  1. Check your internet connection"
+                echo "  2. If behind a proxy: git config --global http.proxy http://host:port"
+                echo "  3. If in China: git config --global url.\"https://ghproxy.com/https://github.com\".insteadOf \"https://github.com\""
+                echo "  4. Retry: ./mycraft.sh build --clean"
+            elif grep -q "glslc not found" "$cmake_log"; then
+                warn "Vulkan SDK not installed. Run: ./mycraft.sh setup"
+            elif grep -q "Could NOT find Vulkan" "$cmake_log"; then
+                warn "Vulkan SDK not found. Run: ./mycraft.sh setup"
+            fi
+            exit 1
+        fi
+    else
+        ok "Configuration up-to-date, skipping cmake configure"
     fi
 
     # --- 编译阶段 ---
