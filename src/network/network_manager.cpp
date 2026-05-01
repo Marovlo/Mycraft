@@ -209,7 +209,15 @@ void NetworkManager::handleServerEvent(const ENetEvent& event) {
             if (it != peerToId_.end()) {
                 uint32_t id = it->second;
                 std::cout << "[Network] Client " << id << " disconnected" << std::endl;
-                if (onDisconnect_) onDisconnect_(id);
+                // 把断开事件放入队列，确保在所有已收到的包（如位置包）处理完之后再处理断开
+                // 避免竞争：直接调用 onDisconnect_ 会在位置包被 processPackets 处理之前保存旧位置
+                {
+                    std::lock_guard<std::mutex> lock(packetMutex_);
+                    ReceivedPacket disconnPkt;
+                    disconnPkt.type = PacketType::C2S_Disconnect;
+                    disconnPkt.senderId = id;
+                    incomingPackets_.push_back(std::move(disconnPkt));
+                }
                 clients_.erase(id);
                 peerToId_.erase(it);
             }

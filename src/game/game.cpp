@@ -450,6 +450,8 @@ void Game::leaveWorld() {
         integratedServer_.reset();
     }
     if (clientConnection_) {
+        // 断开前发送最终位置（用可靠通道，确保服务器收到并保存正确位置）
+        clientConnection_->sendFinalPosition(player_.position, player_.yaw, player_.pitch, player_.onGround);
         clientConnection_->disconnect();
         clientConnection_.reset();
     }

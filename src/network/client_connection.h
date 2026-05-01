@@ -69,6 +69,7 @@ public:
     void update();  // 轮询网络事件并处理包
 
     // === 发送操作到服务器 ===
+    void sendFinalPosition(const glm::vec3& pos, float yaw, float pitch, bool onGround);
     void sendPosition(const glm::vec3& pos, float yaw, float pitch, bool onGround);
     void sendBlockDig(PlayerActionType action, int x, int y, int z);
     void sendBlockPlace(int x, int y, int z, uint8_t blockId);

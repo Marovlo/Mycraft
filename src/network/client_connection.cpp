@@ -77,6 +77,16 @@ void ClientConnection::update() {
 
 // === 发送操作 ===
 
+void ClientConnection::sendFinalPosition(const glm::vec3& pos, float yaw, float pitch, bool onGround) {
+    // 断开前发送最终位置，使用可靠通道确保服务器收到
+    PacketBuffer buf;
+    buf.writeVec3(pos);
+    buf.writeFloat(yaw);
+    buf.writeFloat(pitch);
+    buf.writeBool(onGround);
+    network_.sendToServer(PacketType::C2S_PlayerPosition, buf, NetChannel::Reliable);
+}
+
 void ClientConnection::sendPosition(const glm::vec3& pos, float yaw, float pitch, bool onGround) {
     if (!loggedIn_) return;
 
