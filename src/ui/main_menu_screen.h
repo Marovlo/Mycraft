@@ -161,4 +161,6 @@ private:
 
     // 解析地址
     void parseAddress(const std::string& addr, std::string& host, uint16_t& port);
+    // 保存名字和地址到本地配置文件
+    void saveProfile();
 };

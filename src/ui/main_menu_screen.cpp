@@ -7,6 +7,8 @@
 #include <iostream>
 #include <sstream>
 #include <iomanip>
+#include <fstream>
+#include <cstdlib>
 #include "core/serialization.h"
 #include "audio/sound_engine.h"
 
@@ -111,13 +113,44 @@ void ServerConnectScreen::init(UIRenderer* ui, TextureAtlas* atlas) {
     atlas_ = atlas;
 }
 
+// 配置文件路径：~/.mycraft_profile
+static std::string getProfilePath() {
+    const char* home = std::getenv("HOME");
+    if (!home) home = ".";
+    return std::string(home) + "/.mycraft_profile";
+}
+
 void ServerConnectScreen::open() {
+    // 默认值
     addressInput_ = "81.70.166.231:25566";
     nameInput_ = "Player";
+
+    // 从本地配置文件读取上次的名字和地址
+    std::ifstream f(getProfilePath());
+    if (f.is_open()) {
+        std::string line;
+        while (std::getline(f, line)) {
+            auto eq = line.find('=');
+            if (eq == std::string::npos) continue;
+            std::string key = line.substr(0, eq);
+            std::string val = line.substr(eq + 1);
+            if (key == "name" && !val.empty()) nameInput_ = val;
+            else if (key == "address" && !val.empty()) addressInput_ = val;
+        }
+    }
+
     activeField_ = 0;
     hoveredButton_ = -1;
     cursorBlinkTime_ = 0.0;
     cursorVisible_ = true;
+}
+
+void ServerConnectScreen::saveProfile() {
+    std::ofstream f(getProfilePath(), std::ios::trunc);
+    if (f.is_open()) {
+        f << "name=" << nameInput_ << "\n";
+        f << "address=" << addressInput_ << "\n";
+    }
 }
 
 void ServerConnectScreen::parseAddress(const std::string& addr, std::string& host, uint16_t& port) {
@@ -222,6 +255,7 @@ ServerConnectScreen::Result ServerConnectScreen::update(InputManager& input, flo
     if (input.isMouseButtonPressed(GLFW_MOUSE_BUTTON_LEFT)) {
         if (hoveredButton_ == 0 && !addressInput_.empty() && !nameInput_.empty()) {
             getSoundEngine().play2D(SoundEventId::UIButtonClick, 0.5f);
+            saveProfile();
             Result r;
             r.action = Action::Connect;
             parseAddress(addressInput_, r.host, r.port);
@@ -235,6 +269,7 @@ ServerConnectScreen::Result ServerConnectScreen::update(InputManager& input, flo
 
     // Enter 连接
     if (input.isKeyPressed(GLFW_KEY_ENTER) && !addressInput_.empty() && !nameInput_.empty()) {
+        saveProfile();
         Result r;
         r.action = Action::Connect;
         parseAddress(addressInput_, r.host, r.port);
