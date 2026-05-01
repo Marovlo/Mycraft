@@ -187,7 +187,15 @@ void ItemRegistry::registerDefaults() {
 
     // Functional block items (continued)
     regBlockItem("furnace", "Furnace", Block::Furnace);  // 58
-    regBlockItem("torch",   "Torch",   Block::Torch);    // 59
+    // Torch 是 Cross 类型方块，需要 iconTileName 才能在物品栏显示
+    registerItem({
+        .name = "torch",
+        .displayName = "Torch",
+        .type = ItemType::Block,
+        .maxStackSize = 64,
+        .blockId = Block::Torch,
+        .iconTileName = "torch",
+    });  // 59
 
     // Vegetation / decoration block items (60-66)
     // These are Cross-render blocks — use iconTileName for 2D display.

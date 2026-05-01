@@ -155,10 +155,10 @@ void MobRegistry::registerDefaults() {
         .maxHp = 20,
         .moveSpeed = 0.23f,
         .attackDamage = 3.0f,
-        .attackRange = 1.5f,
+        .attackRange = 1.5f,  // 原版 MC 僵尸攻击范围（XZ 平面中心到中心）
         .attackCooldownTicks = 20,
         .width = 0.6f, .height = 1.95f,
-        .detectRange = 40.0f,
+        .detectRange = 16.0f,
         .isHostile = true,
         .burnInSunlight = true,
         .lootTable = {},  // 僵尸暂无掉落物（腐肉未实现）
@@ -216,6 +216,7 @@ void MobRegistry::registerDefaults() {
         .detectRange = 16.0f,
         .isHostile = true,
         .burnInSunlight = false,
+        .canClimb = true,
         .lootTable = {
             {Item::StringItem, 0, 2, 1.0f},
             {Item::SpiderEye, 0, 1, 0.33f},
@@ -273,6 +274,7 @@ MobEntity::MobEntity(MobType type) : mobType(type) {
     mobWidth = props.width;
     mobHeight = props.height;
     halfExtents = glm::vec3(mobWidth * 0.5f, mobHeight * 0.5f, mobWidth * 0.5f);
+    canClimb = props.canClimb;
 
     // 从属性中创建 AI 目标组件实例
     for (const auto& factory : props.aiGoalFactories) {
@@ -364,8 +366,8 @@ void MobEntity::tick(World& world, EntityManager& mgr,
         velocity.y = -2.0f;
     }
 
-    // 蜘蛛爬墙
-    if (mobType == MobType::Spider && !onGround) {
+    // 蜘蛛爬墙：贴墙时抵消重力，由 moveToward 的 Y 方向控制爬行
+    if (canClimb && !onGround) {
         float feetY = position.y - halfExtents.y;
         int bx = static_cast<int>(std::floor(position.x));
         int by = static_cast<int>(std::floor(feetY));
@@ -388,8 +390,8 @@ void MobEntity::tick(World& world, EntityManager& mgr,
             if (touchingWall) break;
         }
         if (touchingWall) {
+            // 贴墙时抵消重力积累，Y 方向由 moveToward 控制
             if (velocity.y < 0) velocity.y = 0;
-            velocity.y = moveSpeed * 4.0f;
         }
     }
 
@@ -441,6 +443,18 @@ void MobEntity::tickAI(World& world, Player& player, EntityManager& mgr) {
                 bestGoal = i;
             }
         }
+    }
+
+    // 调试：僵尸每100tick打印一次AI状态
+    if (mobType == MobType::Zombie && tickCount % 100 == 0) {
+        float dist = glm::length(position - player.position);
+        std::fprintf(stderr, "[ZombieAI] tick=%d dist=%.2f aiState=%d bestGoal=%d bestPriority=%d\n",
+               tickCount, dist, (int)aiState, bestGoal, bestPriority);
+        for (int i = 0; i < static_cast<int>(aiGoals_.size()); i++) {
+            bool cu = aiGoals_[i]->canUse(*this, world, player);
+            std::fprintf(stderr, "  goal[%d] priority=%d canUse=%d\n", i, aiGoals_[i]->priority, (int)cu);
+        }
+        std::fflush(stderr);
     }
 
     // 如果有可用目标，执行它
@@ -599,6 +613,33 @@ bool MobEntity::canSeePlayer(const World& world, const Player& player) const {
 
 void MobEntity::moveToward(const glm::vec3& target, float speed, World* world) {
     glm::vec3 dir = target - position;
+
+    if (canClimb) {
+        // 蜘蛛爬墙：使用完整 3D 方向，抵消重力
+        float dist3d = glm::length(dir);
+        if (dist3d < 0.01f) return;
+        dir /= dist3d;
+        bodyYaw = std::atan2(dir.x, dir.z) + 3.14159265f;
+        // 抵消重力，让蜘蛛可以垂直爬行
+        velocity.y -= velocity.y * 0.8f;  // 阻尼掉重力积累
+        if (dir.y > 0.1f) {
+            velocity.y = speed * 4.0f * dir.y;  // 向上爬
+        } else if (dir.y < -0.1f) {
+            velocity.y = speed * 2.0f * dir.y;  // 向下爬（慢一点）
+        }
+        float accel = speed * 4.0f;
+        velocity.x += dir.x * accel;
+        velocity.z += dir.z * accel;
+        float hSpeed = std::sqrt(velocity.x * velocity.x + velocity.z * velocity.z);
+        float maxSpeed = speed * 4.317f;
+        if (hSpeed > maxSpeed) {
+            float scale = maxSpeed / hSpeed;
+            velocity.x *= scale;
+            velocity.z *= scale;
+        }
+        return;
+    }
+
     dir.y = 0;
     float dist = glm::length(dir);
     if (dist < 0.01f) return;

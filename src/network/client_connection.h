@@ -21,16 +21,18 @@ struct RemotePlayer {
     uint32_t playerId = 0;
     std::string name;
     glm::vec3 position{0.0f};
-    glm::vec3 prevPosition{0.0f};  // 用于插值
+    glm::vec3 prevPosition{0.0f};  // 用于位置插值
     float yaw = 0.0f;
     float pitch = 0.0f;
+    float prevYaw = 0.0f;          // 用于旋转插值
+    float prevPitch = 0.0f;        // 用于旋转插值
     bool onGround = true;
     double lastUpdateTime = 0.0;
 
     // === 动作状态（用于第三人称动画渲染） ===
     bool isSwingArm = false;       // 挥臂动画（攻击/挖掘）
     int  swingTicks = 0;           // 挥臂动画进度
-    static constexpr int SWING_DURATION = 6;  // 挥臂动画持续 tick 数
+    static constexpr int SWING_DURATION = 8;  // 挥臂动画持续 tick 数（MC 原版 8 tick = 0.4s）
 
     bool isChargingBow = false;    // 正在拉弓
     int  bowChargeTicks = 0;       // 拉弓蓄力 tick 数
@@ -40,6 +42,8 @@ struct RemotePlayer {
 
     bool isSneaking = false;       // 潜行
     bool isSprinting = false;      // 冲刺
+
+    uint16_t heldItemId = 0;       // 手持物品 ID（用于第三人称渲染）
 };
 
 // 区块数据（从服务器接收）

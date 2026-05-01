@@ -493,6 +493,13 @@ void MobRenderer::appendMobMesh(const MobEntity& mob, float partialTick, float s
             float leftArmSwing = -legSwing * 0.5f;
             float rightArmSwing = legSwing * 0.5f;
 
+            // 僵尸追玩家时双臂前举（MC 原版标志性动作：双臂水平向前伸出）
+            // 绕 X 轴旋转 -π/2（-90°）= 手臂从下垂变为水平向前
+            if (mob.isChasing && mob.mobType == MobType::Zombie) {
+                leftArmSwing  = -1.5708f;  // -π/2，双臂水平前举
+                rightArmSwing = -1.5708f;
+            }
+
             // 骷髅拉弓动画：右臂举起（绕 X 轴旋转 -90°，指向前方）
             if (mob.isChargingBow) {
                 float chargeRatio = std::min(static_cast<float>(mob.bowChargeTicks) / 20.0f, 1.0f);
@@ -515,19 +522,36 @@ void MobRenderer::appendMobMesh(const MobEntity& mob, float partialTick, float s
             addCuboid(model.armRight, texReg, model.texWidth, model.texHeight, rightArm, light);
         }
     } else {
-        // 四足：前后腿交替摆动
-        auto animateLeg = [&](const MobCuboid& leg, float angle) {
-            glm::mat4 m = root;
-            m = glm::translate(m, leg.pivot);
-            m = glm::rotate(m, angle, glm::vec3(1, 0, 0));
-            m = glm::translate(m, -leg.pivot);
-            addCuboid(leg, texReg, model.texWidth, model.texHeight, m, light);
-        };
-
-        animateLeg(model.legFrontLeft,   legSwing);
-        animateLeg(model.legFrontRight, -legSwing);
-        animateLeg(model.legBackLeft,   -legSwing);
-        animateLeg(model.legBackRight,   legSwing);
+        // 四足动画
+        if (mob.mobType == MobType::Spider) {
+            // 蜘蛛腿是横向长条（X方向伸展），绕Z轴上下拍打
+            // 前腿和后腿交替摆动，左右腿反相
+            auto animateSpiderLeg = [&](const MobCuboid& leg, float angle) {
+                glm::mat4 m = root;
+                m = glm::translate(m, leg.pivot);
+                m = glm::rotate(m, angle, glm::vec3(0, 0, 1)); // 绕Z轴：上下拍打
+                m = glm::translate(m, -leg.pivot);
+                addCuboid(leg, texReg, model.texWidth, model.texHeight, m, light);
+            };
+            // 前左/后右同相，前右/后左反相
+            animateSpiderLeg(model.legFrontLeft,   legSwing);
+            animateSpiderLeg(model.legFrontRight,  -legSwing);
+            animateSpiderLeg(model.legBackLeft,    -legSwing);
+            animateSpiderLeg(model.legBackRight,    legSwing);
+        } else {
+            // 普通四足（牛、猪等）：前后腿交替摆动，绕X轴
+            auto animateLeg = [&](const MobCuboid& leg, float angle) {
+                glm::mat4 m = root;
+                m = glm::translate(m, leg.pivot);
+                m = glm::rotate(m, angle, glm::vec3(1, 0, 0));
+                m = glm::translate(m, -leg.pivot);
+                addCuboid(leg, texReg, model.texWidth, model.texHeight, m, light);
+            };
+            animateLeg(model.legFrontLeft,   legSwing);
+            animateLeg(model.legFrontRight, -legSwing);
+            animateLeg(model.legBackLeft,   -legSwing);
+            animateLeg(model.legBackRight,   legSwing);
+        }
     }
 }
 

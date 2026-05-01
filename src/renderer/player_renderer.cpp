@@ -115,10 +115,10 @@ void PlayerRenderer::ensureCapacity() {
 void PlayerRenderer::addFace(glm::vec3 v0, glm::vec3 v1, glm::vec3 v2, glm::vec3 v3,
                               glm::vec3 normal, float u0, float v0uv, float u1, float v1uv, float light) {
     uint32_t base = static_cast<uint32_t>(vertices_.size());
-    vertices_.push_back({v0, normal, {u0, v1uv}, light});
-    vertices_.push_back({v1, normal, {u0, v0uv}, light});
-    vertices_.push_back({v2, normal, {u1, v0uv}, light});
-    vertices_.push_back({v3, normal, {u1, v1uv}, light});
+    vertices_.push_back({v0, normal, {u0, v1uv}, light, glm::vec3(1.0f)});
+    vertices_.push_back({v1, normal, {u0, v0uv}, light, glm::vec3(1.0f)});
+    vertices_.push_back({v2, normal, {u1, v0uv}, light, glm::vec3(1.0f)});
+    vertices_.push_back({v3, normal, {u1, v1uv}, light, glm::vec3(1.0f)});
     indices_.push_back(base + 0);
     indices_.push_back(base + 1);
     indices_.push_back(base + 2);
@@ -287,6 +287,20 @@ void PlayerRenderer::addHeldItem3D(const std::string& tileName, const glm::mat4&
     // 使用缓存的像素列表（避免每帧重新扫描 256 像素）
     const auto& pixels = getOrBuildPixelCache(tileIdx);
 
+    // 调试输出（临时）
+    {
+        static int dbg2 = 0;
+        if (dbg2++ % 200 == 0) {
+            std::cout << "[addHeldItem3D] tileName=" << tileName
+                      << " tileIdx=" << tileIdx
+                      << " pixels=" << pixels.size()
+                      << " tileSize=" << tileSize
+                      << " atlasSize=" << atlasSize
+                      << " pixelScale=" << (0.5f / static_cast<float>(tileSize))
+                      << "\n";
+        }
+    }
+
     // 每个像素在 viewmodel 空间中的尺寸
     float pixelScale = 0.5f / static_cast<float>(tileSize);
     float depth = pixelScale;
@@ -423,8 +437,8 @@ void PlayerRenderer::buildFrame(const Player& player, const Inventory& inventory
     // ===== 计算 viewmodel 变换矩阵 =====
     // MC 原版 viewmodel 的基础位置（右下角，相对于相机）
     // 这些坐标在 viewmodel 空间中（相机空间，右手坐标系）
-    float baseX = 0.56f;    // 右偏
-    float baseY = -0.52f;   // 下偏
+    float baseX = 0.88f;    // 右偏（更靠右，只露出约一半工具）
+    float baseY = -0.62f;   // 下偏（更靠下，只露出约一半工具）
     float baseZ = -0.72f;   // 前方
 
     // ===== 挥动动画 (swing) =====
@@ -441,13 +455,13 @@ void PlayerRenderer::buildFrame(const Player& player, const Inventory& inventory
         float sinProg = std::sin(sqrtProg * 3.14159265f);
         float sinProg2 = std::sin(swingProg * swingProg * 3.14159265f);
 
-        // 手臂向前伸出 + 向下挥
-        swingTransX = -sinProg2 * 0.4f;
-        swingTransY = std::sin(sqrtProg * 3.14159265f * 2.0f) * -0.2f;
-        swingTransZ = -sinProg * 0.2f;
+        // 挥动时手臂略微前伸
+        swingTransX = -sinProg2 * 0.1f;
+        swingTransY = std::sin(sqrtProg * 3.14159265f * 2.0f) * -0.05f;
+        swingTransZ = -sinProg * 0.05f;
 
-        // 旋转角度
-        swingAngle = sinProg * -1.2f;  // 绕 Y 轴旋转（向左挥）
+        // 挥动角度：约 60° 弧度 ≈ 1.05，方向向前下方
+        swingAngle = sinProg * -0.9f;  // 主旋转角（适中幅度）
     }
 
     // ===== 吃东西动画 =====
@@ -502,20 +516,22 @@ void PlayerRenderer::buildFrame(const Player& player, const Inventory& inventory
     }
 
     // ===== MC 原版 View Bobbing（走路时手臂晃动）=====
-    // MC 原版：走路时手臂有轻微的上下和左右晃动，基于移动距离累积
+    // MC 原版：基于累积步伐相位（walkDist）做正弦波动，不能每帧用瞬时速度计算
+    // 否则每帧 phase 都不同，导致工具疯狂抖动
     float bobX = 0.0f;
     float bobY = 0.0f;
-    if (player.onGround && !player.sneaking) {
-        // 使用速度估算移动距离（水平分量）
+    {
         float speed = std::sqrt(player.velocity.x * player.velocity.x + player.velocity.z * player.velocity.z);
-        if (speed > 0.01f) {
-            // MC 原版 bobbing 频率和幅度
-            float bobPhase = speed * 3.0f * partialTick + speed * 3.0f;
-            bobX = std::sin(bobPhase) * speed * 0.5f;
-            bobY = -std::abs(std::cos(bobPhase)) * speed * 0.4f;
-            // 限制最大幅度
-            bobX = std::clamp(bobX, -0.02f, 0.02f);
-            bobY = std::clamp(bobY, -0.02f, 0.0f);
+        if (player.onGround && speed > 0.01f) {
+            // 每帧累积步伐相位（MC 原版：walkDist += speed * 0.6 per tick）
+            walkBobPhase_ += speed * 0.6f;
+        }
+        // 即使停下来也保留相位，只在有速度时才产生 bobbing 幅度
+        float bobAmp = player.onGround ? std::min(speed * 2.0f, 0.1f) : 0.0f;
+        if (bobAmp > 0.001f) {
+            // MC 原版 bobbing：左右 sin(phase)，上下 -|cos(phase)|
+            bobX = std::sin(walkBobPhase_) * bobAmp * 0.15f;
+            bobY = -std::abs(std::cos(walkBobPhase_)) * bobAmp * 0.1f;
         }
     }
 
@@ -535,9 +551,11 @@ void PlayerRenderer::buildFrame(const Player& player, const Inventory& inventory
     ));
 
     // 挥动旋转（在相机空间中）
+    // 工具已绕 Z 轴倾斜 60°，挥动方向应沿工具柄方向（即 Z 旋转后的 X 轴）向前砸
+    // 等效于：绕 Z 旋转后的局部 X 轴 = cos60°*X + sin60°*(-Y) = (0.5, -0.866, 0)
     if (swingAngle != 0.0f) {
-        viewmodel = viewmodel * glm::rotate(glm::mat4(1.0f), swingAngle, glm::vec3(0, 1, 0));
-        viewmodel = viewmodel * glm::rotate(glm::mat4(1.0f), swingAngle * 0.5f, glm::vec3(1, 0, 0));
+        glm::vec3 swingAxis = glm::normalize(glm::vec3(0.5f, -0.866f, 0.0f)); // Z旋转60°后的局部X轴
+        viewmodel = viewmodel * glm::rotate(glm::mat4(1.0f), swingAngle, swingAxis);
     }
 
     // 吃东西旋转（在相机空间中）
@@ -551,8 +569,10 @@ void PlayerRenderer::buildFrame(const Player& player, const Inventory& inventory
     }
 
     // ===== 渲染手臂 =====
+    // MC 原版：只有空手时才渲染手臂；手持任何物品（工具/食物/方块）时手臂完全隐藏
     armIndexStart_ = 0;
-    if (hasSkinTexture()) {
+    bool handEmpty = held.isEmpty();
+    if (hasSkinTexture() && handEmpty) {
         // 手臂缩放：像素坐标 → viewmodel 空间（1/16 缩放）
         float armScale = 1.0f / 16.0f;
         glm::mat4 armTransform = viewmodel;
@@ -560,7 +580,8 @@ void PlayerRenderer::buildFrame(const Player& player, const Inventory& inventory
 
         // 手臂原点：肩膀在 viewmodel 空间的右上方
         // 手臂从肩膀向下延伸 12 像素
-        ArmCuboid rightArm = {{-2, -12, -2}, {4, 12, 4}, ARM_UV_X, ARM_UV_Y};
+        // origin.z = -4 使手臂完全在相机前方，正面(-Z面)朝向相机
+        ArmCuboid rightArm = {{-2, -12, -4}, {4, 12, 4}, ARM_UV_X, ARM_UV_Y};
         addArmCuboid(rightArm, armTransform, light, SKIN_TEX_W, SKIN_TEX_H);
     }
     armIndexCount_ = static_cast<uint32_t>(indices_.size()) - armIndexStart_;
@@ -570,10 +591,40 @@ void PlayerRenderer::buildFrame(const Player& player, const Inventory& inventory
     if (!held.isEmpty()) {
         const auto& itemProps = ItemRegistry::instance().get(held.id);
 
+        // 调试输出（临时）
+        static int dbgFrame = 0;
+        if (dbgFrame++ % 200 == 0) {
+            std::cout << "[PlayerRenderer] held id=" << held.id
+                      << " name=" << itemProps.name
+                      << " iconTileName=" << itemProps.iconTileName
+                      << " type=" << (int)itemProps.type
+                      << " blockId=" << itemProps.blockId
+                      << "\n";
+            // 打印玩家位置和朝向
+            glm::vec3 playerPos = player.position;
+            glm::vec3 playerFwd = player.getForward();
+            std::cout << "[PlayerRenderer] playerPos=(" << playerPos.x << "," << playerPos.y << "," << playerPos.z << ")"
+                      << " forward=(" << playerFwd.x << "," << playerFwd.y << "," << playerFwd.z << ")\n";
+            // 打印invView的平移分量（相机在世界空间的位置）
+            glm::mat4 invView = glm::inverse(renderViewMatrix);
+            std::cout << "[PlayerRenderer] invView[3]=(" << invView[3][0] << "," << invView[3][1] << "," << invView[3][2] << ")\n";
+            // 打印viewmodel矩阵的平移分量（工具原点在世界空间的位置）
+            glm::mat4 dbgViewmodel = invView * glm::translate(glm::mat4(1.0f), glm::vec3(baseX, baseY + (-0.65f), baseZ));
+            std::cout << "[PlayerRenderer] itemOrigin_world=(" << dbgViewmodel[3][0] << "," << dbgViewmodel[3][1] << "," << dbgViewmodel[3][2] << ")\n";
+            if (!itemProps.iconTileName.empty()) {
+                uint16_t idx = blockAtlas_->getTileIndex(itemProps.iconTileName);
+                std::cout << "[PlayerRenderer] tileIdx=" << idx
+                          << " tileUV=" << blockAtlas_->getTileUV(idx).x
+                          << "," << blockAtlas_->getTileUV(idx).y
+                          << "," << blockAtlas_->getTileUV(idx).z
+                          << "," << blockAtlas_->getTileUV(idx).w << "\n";
+            }
+        }
+
         // 物品位置：在手臂末端（手的位置）
         glm::mat4 itemTransform = viewmodel;
-        // 向下偏移到手的位置
-        itemTransform = glm::translate(itemTransform, glm::vec3(0.0f, -0.65f, 0.0f));
+        // 向下偏移到手的位置（相对于手臂末端，小偏移）
+        itemTransform = glm::translate(itemTransform, glm::vec3(0.0f, -0.1f, 0.0f));
 
         bool isBlock = (itemProps.type == ItemType::Block && itemProps.blockId > 0
                         && BlockRegistry::instance().get(itemProps.blockId).renderType != BlockRenderType::Cross);
@@ -606,10 +657,14 @@ void PlayerRenderer::buildFrame(const Player& player, const Inventory& inventory
                 }
             }
 
-            // MC 原版工具在手中是斜着拿的（约 -45° 绕 Z 轴 + 30° 绕 Y 轴）
-            spriteTransform = glm::rotate(spriteTransform, glm::radians(-45.0f), glm::vec3(0, 0, 1));
-            spriteTransform = glm::rotate(spriteTransform, glm::radians(30.0f), glm::vec3(0, 1, 0));
-            spriteTransform = glm::translate(spriteTransform, glm::vec3(-0.1f, -0.15f, 0.0f));
+            // MC 原版工具持握变换（ItemInHandRenderer）：
+            // 工具图标正面朝向玩家，斜约 30° 放置，镐头朝右上、柄朝左下
+            // 1. 绕 Z 轴 -30°：图标顺时针倾斜（镐头右上、柄左下）
+            // 2. 绕 Y 轴 -10°：轻微斜向右前，正面朝向玩家脸
+            // 3. 绕 X 轴 -15°：工具头略向前下倾（自然握持感）
+            spriteTransform = glm::rotate(spriteTransform, glm::radians(60.0f), glm::vec3(0, 0, 1)); // Z轴：顺时针60°倾斜
+            spriteTransform = glm::rotate(spriteTransform, glm::radians(30.0f), glm::vec3(0, 1, 0)); // Y轴：轻微斜向右前
+            spriteTransform = glm::rotate(spriteTransform, glm::radians(-30.0f), glm::vec3(1, 0, 0)); // X轴：头略朝前下
             addHeldItem3D(tileName, spriteTransform, light);
         }
     }
@@ -669,6 +724,33 @@ void PlayerRenderer::render(VkCommandBuffer cmd, VkPipelineLayout pipelineLayout
 
     // 第二批：渲染手持物品（使用方块图集纹理）
     if (itemIndexCount_ > 0 && blockAtlasDescSet != VK_NULL_HANDLE) {
+        static int dbgRender = 0;
+        if (dbgRender++ % 200 == 0) {
+            std::cout << "[render] itemIndexCount_=" << itemIndexCount_
+                      << " itemIndexStart_=" << itemIndexStart_
+                      << " blockAtlasDescSet=" << (blockAtlasDescSet != VK_NULL_HANDLE ? "valid" : "null")
+                      << " vertices=" << vertices_.size()
+                      << "\n";
+            // 打印前几个顶点坐标、UV、color
+            uint32_t startVert = itemIndexStart_ / 6 * 4;
+            for (uint32_t i = startVert; i < std::min((uint32_t)vertices_.size(), startVert + 4); i++) {
+                std::cout << "  vert[" << i << "] pos=(" << vertices_[i].position.x
+                          << "," << vertices_[i].position.y
+                          << "," << vertices_[i].position.z
+                          << ") uv=(" << vertices_[i].texCoord.x
+                          << "," << vertices_[i].texCoord.y
+                          << ") light=" << vertices_[i].light
+                          << " color=(" << vertices_[i].color.r
+                          << "," << vertices_[i].color.g
+                          << "," << vertices_[i].color.b << ")\n";
+            }
+            // 打印前几个索引
+            std::cout << "  indices[" << itemIndexStart_ << "~" << (itemIndexStart_+5) << "]: ";
+            for (uint32_t i = itemIndexStart_; i < std::min((uint32_t)indices_.size(), itemIndexStart_+6); i++) {
+                std::cout << indices_[i] << " ";
+            }
+            std::cout << "\n";
+        }
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
             pipelineLayout, 0, 1, &blockAtlasDescSet, 0, nullptr);
         vkCmdDrawIndexed(cmd, itemIndexCount_, 1, itemIndexStart_, 0, 0);

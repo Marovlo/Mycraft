@@ -206,7 +206,7 @@ void Game::init() {
     }
 
     // 初始化第三人称远程玩家渲染器
-    remotePlayerRenderer_.init(&engine_);
+    remotePlayerRenderer_.init(&engine_, &textureAtlas_);
     {
         std::string skinPath = std::string(ASSET_DIR) + "/minecraft_vanilla/textures/entity/player/wide/steve.png";
         if (!remotePlayerRenderer_.loadSkinTexture(engine_, skinPath)) {
@@ -929,21 +929,21 @@ void Game::update(float dt) {
     if (!player_.dead && input_.isCursorLocked()) {
         glm::vec3 eye = player_.getEyePosition();
         glm::vec3 fwd = player_.getForward();
-        float closestT = MAX_REACH;
+        float closestT = MAX_ATTACK_REACH;
         for (const auto& e : entityManager_.entities()) {
             if (!e || !e->alive || e->kind() != EntityKind::Mob) continue;
             auto& mob = static_cast<const MobEntity&>(*e);
             if (mob.isDying) continue;
 
-            // 距离平方预筛选：超过 MAX_REACH + 生物半径 的生物不可能被命中
+            // 距离平方预筛选：超过 MAX_ATTACK_REACH + 生物半径 的生物不可能被命中
             glm::vec3 toMob = mob.position - eye;
             float distSq = glm::dot(toMob, toMob);
-            float maxCheckDist = MAX_REACH + mob.mobWidth;
+            float maxCheckDist = MAX_ATTACK_REACH + mob.mobWidth;
             if (distSq > maxCheckDist * maxCheckDist) continue;
 
             glm::vec3 minB = mob.getHitboxMin();
             glm::vec3 maxB = mob.getHitboxMax();
-            float tmin = 0.0f, tmax = MAX_REACH;
+            float tmin = 0.0f, tmax = MAX_ATTACK_REACH;
             bool hit = true;
             for (int i = 0; i < 3; i++) {
                 if (std::abs(fwd[i]) < 1e-6f) {
@@ -1025,12 +1025,15 @@ void Game::update(float dt) {
 
             // 第三人称模式：追加本地玩家模型
             if (needLocalThirdPerson && remotePlayerRenderer_.hasSkinTexture()) {
+                uint16_t heldId = inventory_.getHeldItem().isEmpty() ? 0 : inventory_.getHeldItem().id;
                 remotePlayerRenderer_.appendLocalPlayer(
                     player_.position, prevPlayerPos_,
-                    player_.yaw, player_.pitch, player_.sneaking,
+                    player_.yaw, player_.pitch, prevPlayerYaw_, prevPlayerPitch_,
+                    player_.sneaking,
                     player_.swinging, player_.swingTicks,
                     player_.isChargingBow, player_.bowChargeTicks,
                     player_.isEating, player_.eatingTicks,
+                    heldId,
                     partial, skyLight);
             }
         } else {
@@ -1071,7 +1074,9 @@ void Game::update(float dt) {
 
 void Game::gameTick() {
     const float dt = static_cast<float>(TickClock::TICK_DURATION);
-    prevPlayerPos_ = player_.position;
+    prevPlayerPos_   = player_.position;
+    prevPlayerYaw_   = player_.yaw;
+    prevPlayerPitch_ = player_.pitch;
 
     handleTickInput();
     if (!player_.dead) {

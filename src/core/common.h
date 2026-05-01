@@ -26,7 +26,8 @@ constexpr float MOVE_SPEED    = 4.317f;   // MC walking speed in blocks/sec
 constexpr float SPRINT_SPEED  = 5.612f;   // MC sprinting speed
 constexpr float SNEAK_SPEED   = 1.295f;   // MC sneaking speed (~30% of walk)
 constexpr float SNEAK_EYE_HEIGHT = 1.50f; // Slightly lower eye when sneaking
-constexpr float MAX_REACH     = 6.0f;     // Block interaction range (MC survival=4.5, creative=5, ours=6 for comfort)
+constexpr float MAX_REACH        = 4.5f;  // 方块交互范围（原版MC生存=4.5格，创造=5格）
+constexpr float MAX_ATTACK_REACH = 3.0f;  // 玩家近战攻击生物范围（原版MC Java版=3.0格）
 
 // ========== Coordinate utilities ==========
 

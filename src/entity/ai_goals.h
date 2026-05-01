@@ -41,6 +41,9 @@ struct FleeGoal : AIGoal {
 // 追踪玩家目标
 struct ChaseGoal : AIGoal {
     int pathUpdateTimer = 0;
+    int pathFailCooldown = 0;   // 寻路失败后的冷却（避免每 tick 重跑 A*）
+    int chaseMemoryTicks = 0;   // 追踪记忆：看到玩家后即使失去视线仍追踪 N tick
+    glm::ivec3 lastGoal{0, 0, 0};  // 上次寻路时的目标位置，用于检测目标是否移动过远
     ChaseGoal() { priority = 3; }
 
     bool canUse(const MobEntity& mob, const World& world, const Player& player) const override;
@@ -52,8 +55,10 @@ struct MeleeAttackGoal : AIGoal {
     MeleeAttackGoal() { priority = 2; }
 
     bool canUse(const MobEntity& mob, const World&, const Player& player) const override {
-        float dist = glm::length(mob.position - player.position);
-        return mob.aiState == AIState::Chase && dist <= mob.attackRange && mob.attackCooldown <= 0;
+        // 使用 XZ 平面距离判断攻击范围（忽略 Y 轴差异，与原版 MC 一致）
+        glm::vec2 diff(mob.position.x - player.position.x, mob.position.z - player.position.z);
+        float distXZ = glm::length(diff);
+        return mob.aiState == AIState::Chase && distXZ <= mob.attackRange && mob.attackCooldown <= 0;
     }
 
     void tick(MobEntity& mob, World& world, Player& player, EntityManager& mgr) override;
@@ -79,8 +84,9 @@ struct CreeperExplodeGoal : AIGoal {
     CreeperExplodeGoal() { priority = 1; }
 
     bool canUse(const MobEntity& mob, const World&, const Player& player) const override {
-        float dist = glm::length(mob.position - player.position);
-        return mob.aiState == AIState::Chase && dist <= mob.attackRange && mob.attackCooldown <= 0;
+        glm::vec2 diff(mob.position.x - player.position.x, mob.position.z - player.position.z);
+        float distXZ = glm::length(diff);
+        return mob.aiState == AIState::Chase && distXZ <= mob.attackRange && mob.attackCooldown <= 0;
     }
 
     void tick(MobEntity& mob, World& world, Player& player, EntityManager& mgr) override;

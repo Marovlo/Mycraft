@@ -2,6 +2,9 @@
 
 #include "engine/vulkan_engine.h"
 #include "network/client_connection.h"
+#include "texture_atlas.h"
+#include "core/item.h"
+#include "core/block.h"
 #include <vector>
 #include <string>
 #include <unordered_map>
@@ -25,7 +28,7 @@ struct PlayerCuboid {
 
 class RemotePlayerRenderer {
 public:
-    void init(VulkanEngine* engine);
+    void init(VulkanEngine* engine, const TextureAtlas* blockAtlas = nullptr);
     void destroy();
 
     // 加载 Steve 皮肤纹理
@@ -43,10 +46,12 @@ public:
     // 构建本地玩家的第三人称模型（F5 视角切换时使用）
     // 将本地玩家数据转换为 RemotePlayer 格式并追加到当前帧的 mesh 中
     void appendLocalPlayer(const glm::vec3& position, const glm::vec3& prevPosition,
-                           float yaw, float pitch, bool sneaking,
+                           float yaw, float pitch, float prevYaw, float prevPitch,
+                           bool sneaking,
                            bool isSwingArm, int swingTicks,
                            bool isChargingBow, int bowChargeTicks,
                            bool isEating, int eatingTicks,
+                           uint16_t heldItemId,
                            float partialTick, float skyLightFactor);
 
     // 渲染所有远程玩家（在不透明管线中调用）
@@ -60,6 +65,7 @@ public:
 
 private:
     VulkanEngine* engine_ = nullptr;
+    const TextureAtlas* blockAtlas_ = nullptr;  // 方块图集（用于手持物品渲染）
 
     // Steve 皮肤纹理
     AllocatedImage skinImage_;
@@ -105,6 +111,9 @@ private:
     // 辅助：添加一个面
     void addFace(glm::vec3 v0, glm::vec3 v1, glm::vec3 v2, glm::vec3 v3,
                  glm::vec3 normal, float u0, float v0uv, float u1, float v1uv, float light);
+
+    // 手持物品渲染（方块小立方体 / flat sprite）
+    void addHeldItemMesh(uint16_t heldItemId, const glm::mat4& rightArmTransform, float light);
 
     // 行走动画：根据移动速度计算肢体摆动角度
     float calcLimbSwing(const RemotePlayer& player, float partialTick) const;

@@ -45,8 +45,9 @@ void RemotePlayerRenderer::defineModel() {
 // 初始化与销毁
 // ============================================================
 
-void RemotePlayerRenderer::init(VulkanEngine* engine) {
+void RemotePlayerRenderer::init(VulkanEngine* engine, const TextureAtlas* blockAtlas) {
     engine_ = engine;
+    blockAtlas_ = blockAtlas;
     defineModel();
 
     constexpr size_t INITIAL_VERTS = 1024;
@@ -194,6 +195,15 @@ void RemotePlayerRenderer::appendPlayerMesh(const RemotePlayer& player, float pa
     glm::vec3 pos = glm::mix(player.prevPosition, player.position, partialTick);
     float light = skyLightFactor;
 
+    // 插值旋转（yaw/pitch）— 修复转身卡顿
+    // yaw 需要处理角度环绕（-180~180 范围内的最短路径插值）
+    float yawDelta = player.yaw - player.prevYaw;
+    // 将 delta 归一化到 [-180, 180]
+    while (yawDelta > 180.0f)  yawDelta -= 360.0f;
+    while (yawDelta < -180.0f) yawDelta += 360.0f;
+    float interpYaw   = player.prevYaw + yawDelta * partialTick;
+    float interpPitch = player.prevPitch + (player.pitch - player.prevPitch) * partialTick;
+
     // 计算行走动画
     float limbSwing = calcLimbSwing(player, partialTick);
 
@@ -216,7 +226,7 @@ void RemotePlayerRenderer::appendPlayerMesh(const RemotePlayer& player, float pa
     }
     // 玩家朝向：getForward() 使用标准球坐标（yaw=0 面向 +X），
     // 但模型默认面向 -Z，需要额外偏移 90° 使模型朝向与 getForward() 一致
-    baseTransform = glm::rotate(baseTransform, glm::radians(-player.yaw - 90.0f), glm::vec3(0, 1, 0));
+    baseTransform = glm::rotate(baseTransform, glm::radians(-interpYaw - 90.0f), glm::vec3(0, 1, 0));
     baseTransform = glm::scale(baseTransform, glm::vec3(scale));
 
     // 潜行时身体前倾
@@ -236,7 +246,7 @@ void RemotePlayerRenderer::appendPlayerMesh(const RemotePlayer& player, float pa
         glm::mat4 headTransform = bodyTransform;
         headTransform = glm::translate(headTransform, head_.pivot);
         // 头部 pitch 旋转（减去身体前倾角度，保持头部水平看向前方）
-        float headPitch = -player.pitch;
+        float headPitch = -interpPitch;
         if (sneakLean != 0.0f) headPitch -= sneakLean;
         headTransform = glm::rotate(headTransform, glm::radians(headPitch), glm::vec3(1, 0, 0));
         headTransform = glm::translate(headTransform, -head_.pivot);
@@ -250,8 +260,9 @@ void RemotePlayerRenderer::appendPlayerMesh(const RemotePlayer& player, float pa
     // 挥臂动画（MC 原版：右臂快速向前挥动）
     if (player.isSwingArm && player.swingTicks < RemotePlayer::SWING_DURATION) {
         float swingProgress = static_cast<float>(player.swingTicks) / static_cast<float>(RemotePlayer::SWING_DURATION);
-        // MC 原版挥臂：快速向前再回来（sin 曲线）
-        float swingAnim = std::sin(swingProgress * 3.14159f) * glm::radians(-90.0f);
+        // MC 原版挥臂：sin 曲线，向前（-X轴旋转为向前，模型面向-Z）
+        // 正角度 = 手臂向前挥出（绕X轴正方向旋转，手臂从身体向前摆）
+        float swingAnim = std::sin(swingProgress * 3.14159f) * glm::radians(90.0f);
         rightArmAngle = swingAnim;
     }
 
@@ -314,6 +325,16 @@ void RemotePlayerRenderer::appendPlayerMesh(const RemotePlayer& player, float pa
         legTransform = glm::rotate(legTransform, swingAngle, glm::vec3(1, 0, 0));
         legTransform = glm::translate(legTransform, -leftLeg_.pivot);
         addCuboid(leftLeg_, legTransform, light);
+    }
+
+    // === 手持物品 ===
+    if (player.heldItemId != 0 && blockAtlas_) {
+        // 计算右臂末端的变换矩阵（手的位置）
+        glm::mat4 armTransform = bodyTransform;
+        armTransform = glm::translate(armTransform, rightArm_.pivot);
+        armTransform = glm::rotate(armTransform, rightArmAngle, glm::vec3(1, 0, 0));
+        armTransform = glm::translate(armTransform, -rightArm_.pivot);
+        addHeldItemMesh(player.heldItemId, armTransform, light);
     }
 }
 
@@ -450,10 +471,10 @@ void RemotePlayerRenderer::addCuboid(const PlayerCuboid& cuboid,
 void RemotePlayerRenderer::addFace(glm::vec3 v0, glm::vec3 v1, glm::vec3 v2, glm::vec3 v3,
                                     glm::vec3 normal, float u0, float v0uv, float u1, float v1uv, float light) {
     uint32_t base = static_cast<uint32_t>(vertices_.size());
-    vertices_.push_back({v0, normal, {u0, v1uv}, light});
-    vertices_.push_back({v1, normal, {u0, v0uv}, light});
-    vertices_.push_back({v2, normal, {u1, v0uv}, light});
-    vertices_.push_back({v3, normal, {u1, v1uv}, light});
+    vertices_.push_back({v0, normal, {u0, v1uv}, light, glm::vec3(1.0f)});
+    vertices_.push_back({v1, normal, {u0, v0uv}, light, glm::vec3(1.0f)});
+    vertices_.push_back({v2, normal, {u1, v0uv}, light, glm::vec3(1.0f)});
+    vertices_.push_back({v3, normal, {u1, v1uv}, light, glm::vec3(1.0f)});
     indices_.push_back(base + 0);
     indices_.push_back(base + 1);
     indices_.push_back(base + 2);
@@ -468,10 +489,12 @@ void RemotePlayerRenderer::addFace(glm::vec3 v0, glm::vec3 v1, glm::vec3 v2, glm
 
 void RemotePlayerRenderer::appendLocalPlayer(
     const glm::vec3& position, const glm::vec3& prevPosition,
-    float yaw, float pitch, bool sneaking,
+    float yaw, float pitch, float prevYaw, float prevPitch,
+    bool sneaking,
     bool isSwingArm, int swingTicks,
     bool isChargingBow, int bowChargeTicks,
     bool isEating, int eatingTicks,
+    uint16_t heldItemId,
     float partialTick, float skyLightFactor)
 {
     // 构造一个临时的 RemotePlayer 来复用 appendPlayerMesh
@@ -481,6 +504,8 @@ void RemotePlayerRenderer::appendLocalPlayer(
     localAsRemote.prevPosition = prevPosition;
     localAsRemote.yaw = yaw;
     localAsRemote.pitch = pitch;
+    localAsRemote.prevYaw = prevYaw;      // 修复抖动：传入上一帧 yaw
+    localAsRemote.prevPitch = prevPitch;  // 修复抖动：传入上一帧 pitch
     localAsRemote.isSneaking = sneaking;
     localAsRemote.isSwingArm = isSwingArm;
     localAsRemote.swingTicks = swingTicks;
@@ -488,6 +513,7 @@ void RemotePlayerRenderer::appendLocalPlayer(
     localAsRemote.bowChargeTicks = bowChargeTicks;
     localAsRemote.isEating = isEating;
     localAsRemote.eatingTicks = eatingTicks;
+    localAsRemote.heldItemId = heldItemId;
 
     appendPlayerMesh(localAsRemote, partialTick, skyLightFactor);
 
@@ -512,4 +538,118 @@ void RemotePlayerRenderer::render(VkCommandBuffer cmd, VkPipelineLayout pipeline
     vkCmdBindVertexBuffers(cmd, 0, 1, vb, offsets);
     vkCmdBindIndexBuffer(cmd, indexBuffer_.buffer, 0, VK_INDEX_TYPE_UINT32);
     vkCmdDrawIndexed(cmd, indexCountThisFrame_, 1, 0, 0, 0);
+}
+
+// ============================================================
+// 手持物品渲染（第三人称）
+// 在右臂末端渲染手持物品：方块→小立方体，工具/材料→flat sprite
+// ============================================================
+
+void RemotePlayerRenderer::addHeldItemMesh(uint16_t heldItemId, const glm::mat4& rightArmTransform, float light) {
+    if (!blockAtlas_ || heldItemId == 0) return;
+
+    const auto& itemProps = ItemRegistry::instance().get(heldItemId);
+
+    // 右臂末端位置（手的位置）：在右臂变换基础上，偏移到手腕处
+    // 右臂 origin=(−7,10,−2), size=(4,12,4), pivot=(−5,22,0)
+    // 手腕在 origin.y = 10（臂底部），像素坐标
+    // 在 bodyTransform 的像素空间中，手腕位置约为 (-5, 10, 0)
+    // 转换到 scale(1/16) 后约为 (-0.3125, 0.625, 0)
+    // 这里直接在 rightArmTransform 基础上偏移到手腕
+    glm::mat4 handTransform = rightArmTransform;
+    // 偏移到右臂底部（手腕处）：沿臂的 -Y 方向（像素空间中 y=10 是底部）
+    // rightArm_.origin = (-7, 10, -2)，底部 y = 10，pivot.y = 22
+    // 从 pivot 到底部：10 - 22 = -12 像素
+    // 加上 pivot 偏移：translate to pivot, rotate, translate back already done
+    // 手腕在 pivot 下方 12 像素处
+    handTransform = glm::translate(handTransform, glm::vec3(-5.0f, 10.0f, 0.0f));  // 像素坐标
+
+    // 判断渲染类型
+    bool isBlockItem = false;
+    if (itemProps.type == ItemType::Block && itemProps.blockId > 0) {
+        auto rt = BlockRegistry::instance().get(itemProps.blockId).renderType;
+        isBlockItem = (rt == BlockRenderType::Opaque || rt == BlockRenderType::Liquid);
+    }
+
+    if (isBlockItem) {
+        // 方块物品：渲染小立方体（4x4x4 像素大小）
+        BlockId blockId = itemProps.blockId;
+        const auto& blockProps = BlockRegistry::instance().get(blockId);
+
+        // 小方块尺寸：4 像素（在像素坐标系中）
+        float s = 4.0f;
+        glm::vec3 corners[8] = {
+            {0, 0, 0}, {s, 0, 0}, {s, s, 0}, {0, s, 0},
+            {0, 0, s}, {s, 0, s}, {s, s, s}, {0, s, s},
+        };
+        glm::vec3 wc[8];
+        for (int i = 0; i < 8; i++) {
+            glm::vec4 p = handTransform * glm::vec4(corners[i], 1.0f);
+            wc[i] = glm::vec3(p);
+        }
+        glm::mat3 N = glm::mat3(handTransform);
+
+        auto drawFace = [&](glm::vec3 v0, glm::vec3 v1, glm::vec3 v2, glm::vec3 v3,
+                             glm::vec3 norm, Direction dir) {
+            uint16_t texId = blockProps.textures.forDirection(dir);
+            glm::vec4 uv = blockAtlas_->getTileUV(texId);
+            addFace(v0, v1, v2, v3, glm::normalize(N * norm), uv.x, uv.y, uv.z, uv.w, light);
+        };
+
+        drawFace(wc[7], wc[6], wc[2], wc[3], {0, 1, 0},  Direction::PosY);
+        drawFace(wc[0], wc[1], wc[5], wc[4], {0, -1, 0}, Direction::NegY);
+        drawFace(wc[0], wc[3], wc[2], wc[1], {0, 0, -1}, Direction::NegZ);
+        drawFace(wc[5], wc[6], wc[7], wc[4], {0, 0, 1},  Direction::PosZ);
+        drawFace(wc[4], wc[7], wc[3], wc[0], {-1, 0, 0}, Direction::NegX);
+        drawFace(wc[1], wc[2], wc[6], wc[5], {1, 0, 0},  Direction::PosX);
+
+    } else {
+        // 工具/材料/Cross方块：渲染 flat sprite（单面，管线双面可见）
+        uint16_t texId = 0;
+        if (!itemProps.iconTileName.empty()) {
+            texId = blockAtlas_->getTileIndex(itemProps.iconTileName);
+        } else if (itemProps.type == ItemType::Block && itemProps.blockId > 0) {
+            texId = BlockRegistry::instance().get(itemProps.blockId).textures.forDirection(Direction::PosZ);
+        } else {
+            texId = BlockRegistry::instance().get(Block::Cobblestone).textures.forDirection(Direction::PosZ);
+        }
+
+        glm::vec4 uvRect = blockAtlas_->getTileUV(texId);
+        float uMin = uvRect.x, vMin = uvRect.y, uMax = uvRect.z, vMax = uvRect.w;
+
+        // sprite 尺寸：8x8 像素（在像素坐标系中）
+        float hs = 4.0f;   // half size
+        float ht = 0.5f;   // half thickness
+
+        glm::mat3 N = glm::mat3(handTransform);
+
+        auto xf = [&](const glm::vec3& v) {
+            glm::vec4 p = handTransform * glm::vec4(v, 1.0f);
+            return glm::vec3(p);
+        };
+
+        auto addQuad = [&](glm::vec3 v0, glm::vec3 v1, glm::vec3 v2, glm::vec3 v3,
+                           glm::vec3 normal,
+                           glm::vec2 uv0, glm::vec2 uv1, glm::vec2 uv2, glm::vec2 uv3) {
+            glm::vec3 wn = glm::normalize(N * normal);
+            uint32_t base = static_cast<uint32_t>(vertices_.size());
+            vertices_.push_back({xf(v0), wn, uv0, light, glm::vec3(1.0f)});
+            vertices_.push_back({xf(v1), wn, uv1, light, glm::vec3(1.0f)});
+            vertices_.push_back({xf(v2), wn, uv2, light, glm::vec3(1.0f)});
+            vertices_.push_back({xf(v3), wn, uv3, light, glm::vec3(1.0f)});
+            indices_.push_back(base + 0);
+            indices_.push_back(base + 1);
+            indices_.push_back(base + 2);
+            indices_.push_back(base + 0);
+            indices_.push_back(base + 2);
+            indices_.push_back(base + 3);
+        };
+
+        // 单面 sprite（管线已关闭背面剔除，双面可见）
+        addQuad(
+            {-hs, -hs, +ht}, {-hs, +hs, +ht}, {+hs, +hs, +ht}, {+hs, -hs, +ht},
+            {0, 0, 1},
+            {uMin, vMax}, {uMin, vMin}, {uMax, vMin}, {uMax, vMax}
+        );
+    }
 }

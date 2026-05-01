@@ -274,6 +274,8 @@ void ClientConnection::handlePlayerPosition(PacketBuffer& buf) {
     auto& player = remotePlayers_[playerId];
     player.playerId = playerId;
     player.prevPosition = player.position;
+    player.prevYaw = player.yaw;
+    player.prevPitch = player.pitch;
     player.position = pos;
     player.yaw = yaw;
     player.pitch = pitch;

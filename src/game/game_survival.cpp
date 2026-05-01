@@ -164,7 +164,7 @@ void Game::tickPlayerAttack() {
     glm::vec3 fwd = player_.getForward();
 
     MobEntity* closestMob = nullptr;
-    float closestDist = MAX_REACH + 1.0f;
+    float closestDist = MAX_ATTACK_REACH + 1.0f;
 
     for (const auto& e : entityManager_.entities()) {
         if (!e || !e->alive || e->kind() != EntityKind::Mob) continue;
@@ -176,7 +176,7 @@ void Game::tickPlayerAttack() {
         glm::vec3 maxB = mob.getHitboxMax();
 
         // 射线-AABB 相交测试
-        float tmin = 0.0f, tmax = MAX_REACH;
+        float tmin = 0.0f, tmax = MAX_ATTACK_REACH;
         bool hit = true;
         for (int i = 0; i < 3; i++) {
             if (std::abs(fwd[i]) < 1e-6f) {
@@ -218,8 +218,8 @@ void Game::tickPlayerAttack() {
         closestMob->takeDamage(static_cast<int>(baseDmg), kb);
         player_.attackCooldownTicks = player_.attackCooldownMax;
 
-        // 播放攻击命中音效
-        getSoundEngine().play(SoundEventId::SuccessfulHit, closestMob->position, 0.5f);
+        // 播放攻击命中音效（MC 原版：非定位音效）
+        getSoundEngine().play2D(SoundEventId::SuccessfulHit, 0.5f);
 
         // 触发挥动动画
         player_.startSwing();

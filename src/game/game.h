@@ -218,6 +218,8 @@ private:
     int playerChunkX_ = 0;
     int playerChunkZ_ = 0;
     glm::vec3 prevPlayerPos_{0.0f, 100.0f, 0.0f};
+    float prevPlayerYaw_   = 0.0f;
+    float prevPlayerPitch_ = 0.0f;
 
     Mesh targetHighlight_;
     bool hasTarget_ = false;

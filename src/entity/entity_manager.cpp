@@ -45,6 +45,38 @@ static bool mobCollidesWithBlocks(const World& world, const glm::vec3& pos, floa
 void EntityManager::tick(World& world, Player& player, Inventory& inventory) {
     glm::vec3 playerCentre = player.position;
 
+    // 调试：每20tick打印一次实体统计
+    {
+        static int dbgTick = 0;
+        dbgTick++;
+        if (dbgTick % 20 == 1) {
+            int total = 0, items = 0, mobs = 0, zombies = 0, aliveZombies = 0;
+            for (auto& e : entities_) {
+                total++;
+                if (e->kind() == EntityKind::Item) {
+                    items++;
+                } else if (e->kind() == EntityKind::Mob) {
+                    mobs++;
+                    auto& mob = static_cast<MobEntity&>(*e);
+                    if (mob.mobType == MobType::Zombie) {
+                        zombies++;
+                        if (e->alive) {
+                            aliveZombies++;
+                            float dist = glm::length(e->position - playerCentre);
+                            std::fprintf(stderr, "[EntityMgr] zombie alive pos=(%.1f,%.1f,%.1f) dist=%.1f aiState=%d isChasing=%d\n",
+                                e->position.x, e->position.y, e->position.z, dist,
+                                (int)mob.aiState, (int)mob.isChasing);
+                        }
+                    }
+                }
+            }
+            std::fprintf(stderr, "[EntityMgr] tick=%d total=%d items=%d mobs=%d zombies=%d aliveZombies=%d playerPos=(%.1f,%.1f,%.1f)\n",
+                dbgTick, total, items, mobs, zombies, aliveZombies,
+                playerCentre.x, playerCentre.y, playerCentre.z);
+            std::fflush(stderr);
+        }
+    }
+
     for (auto& e : entities_) {
         if (!e->alive) continue;
 

@@ -83,6 +83,7 @@ struct MobProperties {
     float detectRange;      // 检测玩家距离
     bool isHostile;         // 是否敌对
     bool burnInSunlight;    // 是否在阳光下燃烧
+    bool canClimb = false;  // 是否可以爬墙（蜘蛛）
 
     // --- 数据驱动的掉落物表（消除 spawnLoot 的 switch/case） ---
     std::vector<LootEntry> lootTable;
@@ -132,9 +133,9 @@ public:
     bool hasWanderTarget = false;
 
     // 寻路
-    std::vector<glm::ivec2> path;  // A* 路径（XZ 方块坐标）
+    std::vector<glm::ivec3> path;  // A* 路径（XYZ 方块坐标，Y 为站立格）
     int pathIndex = 0;
-    int pathUpdateTimer = 0;       // 每 20 tick 更新一次路径
+    int pathUpdateTimer = 0;       // 寻路定时兜底计数器
 
     // 碰撞箱
     float mobWidth, mobHeight;
@@ -164,11 +165,17 @@ public:
     int bowChargeTicks = 0;    // 当前蓄力 tick 数（0 = 未蓄力）
     bool isChargingBow = false; // 是否正在拉弓
 
+    // 追玩家状态（MC 原版：僵尸追玩家时双臂前举）
+    bool isChasing = false;
+
     // 受击加速：被攻击后一段时间内加速移动和摆腿
     int panicTicks = 0;        // 受击恐慌剩余tick数（被动生物用）
 
     // 蜘蛛专用：被激怒标记（白天被攻击后会追踪玩家）
     bool provoked = false;
+
+    // 是否可以爬墙（蜘蛛），从 MobProperties 初始化
+    bool canClimb = false;
 
     // 羊专用：剪毛/吃草机制（MC原版）
     bool isSheared = false;        // 是否被剪毛

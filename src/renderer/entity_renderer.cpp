@@ -21,9 +21,9 @@ static const UnitFace kUnitFaces[6] = {
     {{1,0,0},{1,1,0},{1,1,1},{1,0,1}, { 1, 0, 0}, Direction::PosX},
     {{0,0,1},{0,1,1},{0,1,0},{0,0,0}, {-1, 0, 0}, Direction::NegX},
     {{0,1,1},{1,1,1},{1,1,0},{0,1,0}, { 0, 1, 0}, Direction::PosY},
-    {{0,0,0},{1,0,0},{1,0,1},{0,0,1}, { 0,-1, 0}, Direction::NegY},
+    {{0,0,1},{1,0,1},{1,0,0},{0,0,0}, { 0,-1, 0}, Direction::NegY},  // 修复绕序：从-Y看CCW
     {{1,0,1},{1,1,1},{0,1,1},{0,0,1}, { 0, 0, 1}, Direction::PosZ},
-    {{0,0,0},{0,1,0},{1,1,0},{1,0,0}, { 0, 0,-1}, Direction::NegZ},
+    {{1,0,0},{1,1,0},{0,1,0},{0,0,0}, { 0, 0,-1}, Direction::NegZ},  // 修复绕序：从-Z看CCW
 };
 
 void EntityRenderer::init(VulkanEngine* engine, const TextureAtlas* atlas) {
@@ -143,12 +143,15 @@ void EntityRenderer::appendItemMesh(const ItemEntity& item, float partialTick) {
             indices_.push_back(base + 3);
         }
     } else {
-        // ===== Non-block item: MC-style flat sprite with thin edges =====
-        // A card-like shape: front face + back face + 4 thin edge strips.
-        // Thickness = 1/16 of the sprite size (1 pixel in MC's 16px items).
+    // ===== Non-block item: MC-style flat sprite =====
+        // MC 原版掉落物：单片 flat sprite，管线已关闭背面剔除，所以只需渲染一面即可双面可见。
+        // 带 4 条薄边，模拟物品厚度感。
         uint16_t texId = 0;
         if (!itemProps.iconTileName.empty()) {
             texId = atlas_->getTileIndex(itemProps.iconTileName);
+        } else if (itemProps.type == ItemType::Block && itemProps.blockId > 0) {
+            // Block item with Cross renderType: use block's own texture
+            texId = BlockRegistry::instance().get(itemProps.blockId).textures.forDirection(Direction::PosZ);
         } else {
             // Fallback: cobblestone
             texId = BlockRegistry::instance().get(Block::Cobblestone).textures.forDirection(Direction::PosZ);
@@ -201,16 +204,10 @@ void EntityRenderer::appendItemMesh(const ItemEntity& item, float partialTick) {
         float pixelV = (vMax - vMin) / 16.0f;
 
         // --- Front face (+Z): full texture ---
+        // 管线已关闭背面剔除，单面即可双面可见，不再重复渲染背面
         addQuad(
             {-hs, -hs, +ht}, {-hs, +hs, +ht}, {+hs, +hs, +ht}, {+hs, -hs, +ht},
             {0, 0, 1},
-            {uMin, vMax}, {uMin, vMin}, {uMax, vMin}, {uMax, vMax}
-        );
-
-        // --- Back face (-Z): same texture, UV mirrored horizontally ---
-        addQuad(
-            {+hs, -hs, -ht}, {+hs, +hs, -ht}, {-hs, +hs, -ht}, {-hs, -hs, -ht},
-            {0, 0, -1},
             {uMin, vMax}, {uMin, vMin}, {uMax, vMin}, {uMax, vMax}
         );
 
@@ -376,9 +373,9 @@ void EntityRenderer::appendXPOrbMesh(const XPOrbEntity& orb, float partialTick) 
 
     glm::mat3 N = glm::mat3(M);
 
-    // 使用 emerald_block 纹理中心区域（绿色）
-    uint16_t texId = atlas_->getTileIndex("emerald_block");
-    if (texId == 0) texId = atlas_->getTileIndex("slime_block");
+    // 使用已注册的绿色纹理（grass_block 侧面为绿色）
+    // emerald_block/slime_block 未注册进图集，改用 grass_block 顶面（绿色）
+    uint16_t texId = BlockRegistry::instance().get(Block::Grass).textures.forDirection(Direction::PosY);
     glm::vec4 uvRect = atlas_->getTileUV(texId);
     // 取纹理中心小区域
     float uMid = (uvRect.x + uvRect.z) * 0.5f;

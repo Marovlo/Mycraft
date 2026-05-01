@@ -92,6 +92,9 @@ private:
     // 渲染手持物品（3D 挤出模型 — MC 原版：每个像素都有 1px 厚度）
     void addHeldItem3D(const std::string& tileName, const glm::mat4& transform, float light);
 
+    // View bobbing 累积步伐相位（每帧根据速度累积，避免每帧随机跳动）
+    float walkBobPhase_ = 0.0f;
+
     // 性能优化：缓存每个 tile 的不透明像素列表和侧面信息
     struct PixelInfo {
         uint8_t px, py;       // 像素坐标
