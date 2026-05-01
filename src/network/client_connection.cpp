@@ -230,12 +230,15 @@ void ClientConnection::handleWorldInfo(PacketBuffer& buf) {
     serverTick_ = buf.readU64();
     uint8_t gameMode = buf.readU8();
     spawnPos_ = buf.readVec3();
+    spawnYaw_   = buf.readFloat();
+    spawnPitch_ = buf.readFloat();
     hasWorldInfo_ = true;
 
     std::cout << "[Client] World info: seed=" << worldSeed_
               << " tick=" << serverTick_
               << " mode=" << (int)gameMode
               << " spawn=(" << spawnPos_.x << "," << spawnPos_.y << "," << spawnPos_.z << ")"
+              << " yaw=" << spawnYaw_ << " pitch=" << spawnPitch_
               << std::endl;
     (void)gameMode;
 }

@@ -479,22 +479,23 @@ void Server::sendWorldInfo(uint32_t playerId) {
     buf.writeU64(totalTicks_);
     buf.writeU8(0);  // 游戏模式：0=生存
 
-    // 发送出生点
+    // 发送出生点 + 朝向
     std::lock_guard<std::mutex> lock(playersMutex_);
     auto it = players_.find(playerId);
     if (it != players_.end()) {
         buf.writeVec3(it->second.position);
+        buf.writeFloat(it->second.yaw);
+        buf.writeFloat(it->second.pitch);
     } else {
         buf.writeVec3(glm::vec3(0, 80, 0));
+        buf.writeFloat(0.0f);
+        buf.writeFloat(0.0f);
     }
 
     network_.sendToClient(playerId, PacketType::S2C_WorldInfo, buf, NetChannel::Reliable);
 }
 
 void Server::sendChunksToPlayer(uint32_t playerId) {
-    // 客户端使用种子同步本地生成区块（弱服务器友好方案）
-    // 服务器只跟踪玩家视距范围，用于 AOI 和方块变更广播
-    // 不再发送完整区块数据，避免服务器 tick 线程同步生成区块导致卡死
     auto it = players_.find(playerId);
     if (it == players_.end()) return;
 
@@ -502,8 +503,7 @@ void Server::sendChunksToPlayer(uint32_t playerId) {
     int pcx = static_cast<int>(std::floor(player.position.x)) >> 4;
     int pcz = static_cast<int>(std::floor(player.position.z)) >> 4;
 
-    // 更新玩家的已加载区块集合（用于 AOI 过滤）
-    // 清除超出视距的旧区块
+    // 清除超出视距的旧区块记录
     std::vector<uint64_t> toRemove;
     for (uint64_t key : player.loadedChunks) {
         int cx = static_cast<int>(static_cast<uint32_t>(key >> 32));
@@ -518,14 +518,41 @@ void Server::sendChunksToPlayer(uint32_t playerId) {
         player.loadedChunks.erase(key);
     }
 
-    // 添加视距内的新区块
-    for (int dx = -player.viewDistance; dx <= player.viewDistance; dx++) {
-        for (int dz = -player.viewDistance; dz <= player.viewDistance; dz++) {
+    // 每 tick 最多发送 2 个 modified 区块，避免带宽峰值
+    int sentThisTick = 0;
+    constexpr int MAX_CHUNKS_PER_TICK = 2;
+
+    for (int dx = -player.viewDistance; dx <= player.viewDistance && sentThisTick < MAX_CHUNKS_PER_TICK; dx++) {
+        for (int dz = -player.viewDistance; dz <= player.viewDistance && sentThisTick < MAX_CHUNKS_PER_TICK; dz++) {
             int cx = pcx + dx;
             int cz = pcz + dz;
             uint64_t key = (static_cast<uint64_t>(static_cast<uint32_t>(cx)) << 32) |
                            static_cast<uint64_t>(static_cast<uint32_t>(cz));
+
+            // 检查服务器内存中是否有该区块且已被修改
+            Chunk* chunk = world_.getChunk(cx, cz);
+            if (!chunk || !chunk->isModified()) {
+                // 未修改的区块客户端自己用种子生成，只需记录 AOI
+                player.loadedChunks.insert(key);
+                continue;
+            }
+
+            // 该区块已被修改，需要发送给客户端
+            // 用 loadedChunks 记录「已发送 modified 版本」的区块
+            // 每次 modified 区块进入视距都发送（重连后 loadedChunks 是空的）
+            if (player.loadedChunks.count(key)) continue;  // 本次连接已发过
+
+            // 发送原始方块数据（客户端期望 blockCount 字节的原始数据）
+            size_t blockBytes = static_cast<size_t>(Chunk::blockCount()) * sizeof(BlockId);
+            PacketBuffer pkt;
+            pkt.writeI32(cx);
+            pkt.writeI32(cz);
+            pkt.writeU32(static_cast<uint32_t>(blockBytes));
+            pkt.writeBytes(reinterpret_cast<const uint8_t*>(chunk->blocksData()), blockBytes);
+            network_.sendToClient(playerId, PacketType::S2C_ChunkData, pkt, NetChannel::Reliable);
+
             player.loadedChunks.insert(key);
+            sentThisTick++;
         }
     }
 }
@@ -608,6 +635,12 @@ void Server::onPlayerDisconnect(uint32_t playerId) {
             }
             players_.erase(it);
         }
+    }
+
+    // 玩家断开时立即保存所有 dirty 区块（不等自动保存间隔）
+    int savedChunks = saveManager_.saveAllDirtyChunks(world_);
+    if (savedChunks > 0) {
+        std::cout << "[Server] Saved " << savedChunks << " modified chunks on player disconnect\n";
     }
 }
 

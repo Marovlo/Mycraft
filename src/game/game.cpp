@@ -596,10 +596,12 @@ void Game::connectToServer(const std::string& host, uint16_t port, const std::st
         blockUpdateSystem_.notifyNeighbors(world_, x, y, z, tickClock_.getTotalTicks());
     });
 
-    // 使用服务器提供的出生点
+    // 使用服务器提供的出生点和朝向
     glm::vec3 spawn = clientConnection_->getSpawnPosition();
     player_.position = spawn;
     player_.spawnPoint = spawn;
+    player_.yaw   = clientConnection_->getSpawnYaw();
+    player_.pitch = clientConnection_->getSpawnPitch();
     prevPlayerPos_ = spawn;
 
     // 主动拉取服务器在握手期间下发的背包数据

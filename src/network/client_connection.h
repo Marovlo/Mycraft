@@ -84,6 +84,8 @@ public:
     // 是否已经收到 WorldInfo 包（包含 seed / spawn 等关键信息）
     bool hasWorldInfo() const { return hasWorldInfo_; }
     const glm::vec3& getSpawnPosition() const { return spawnPos_; }
+    float getSpawnYaw()   const { return spawnYaw_; }
+    float getSpawnPitch() const { return spawnPitch_; }
 
     // 获取并清空接收到的区块数据
     std::vector<ReceivedChunkData> drainChunkData();
@@ -142,6 +144,8 @@ private:
     uint64_t serverTick_ = 0;
     bool hasWorldInfo_ = false;
     glm::vec3 spawnPos_{0.0f, 80.0f, 0.0f};
+    float spawnYaw_   = 0.0f;
+    float spawnPitch_ = 0.0f;
 
     // 接收到的区块数据队列
     std::vector<ReceivedChunkData> receivedChunks_;
