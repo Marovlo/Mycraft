@@ -19,10 +19,10 @@ class TerrainGenerator;
 //
 // Directory structure:
 //   saves/<worldName>/
-//     level.dat       — world metadata (seed, name, ticks, etc.)
-//     player.dat      — player state + inventory
+//     level.dat           — world metadata (seed, name, ticks, etc.)
+//     players/<name>.dat  — per-player state + inventory (server-authoritative)
 //     region/
-//       r.X.Z.mca     — region files (32×32 chunks each)
+//       r.X.Z.mca         — region files (32×32 chunks each)
 
 class SaveManager {
 public:
@@ -38,7 +38,15 @@ public:
     const std::string& getWorldName() const { return worldName_; }
     const std::string& getRegionDir() const { return regionDir_; }
 
-    // --- Player data ---
+    // --- Player data (server-authoritative, keyed by player name) ---
+    // Save/load player data for a specific named player.
+    // Path: <worldDir>/players/<playerName>.dat
+    bool savePlayerByName(const std::string& playerName,
+                          const Player& player, const Inventory& inventory);
+    bool loadPlayerByName(const std::string& playerName,
+                          Player& player, Inventory& inventory);
+
+    // Legacy single-player shortcuts (uses "player" as the name)
     bool savePlayer(const Player& player, const Inventory& inventory);
     bool loadPlayer(Player& player, Inventory& inventory);
 
@@ -93,6 +101,7 @@ private:
     RegionFile& getRegion(int regionX, int regionZ);
 
     std::string playerPath() const;
+    std::string playerPathByName(const std::string& playerName) const;
     std::string levelPath() const;
     std::string entitiesPath() const;
 };

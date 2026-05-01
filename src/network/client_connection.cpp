@@ -369,8 +369,39 @@ void ClientConnection::handleEntityRemove(PacketBuffer& buf) {
 }
 
 void ClientConnection::handleInventorySync(PacketBuffer& buf) {
-    // TODO: 同步背包数据到本地
-    (void)buf;
+    uint8_t slotCount = buf.readU8();
+    if (slotCount != 36) {
+        return;
+    }
+
+    std::array<std::tuple<uint16_t,uint16_t,uint16_t>, 36> slots;
+    for (int i = 0; i < 36; i++) {
+        uint16_t itemId     = buf.readU16();
+        uint16_t count      = buf.readU16();
+        uint16_t durability = buf.readU16();
+        slots[i] = {itemId, count, durability};
+    }
+
+    // 缓存数据（供 drainInventorySync 使用）
+    {
+        std::lock_guard<std::mutex> lock(inventoryMutex_);
+        pendingInventorySlots_ = slots;
+        hasPendingInventorySync_ = true;
+    }
+
+    // 如果已注册回调，立即触发
+    if (onInventorySync_) {
+        onInventorySync_(slots);
+    }
+}
+
+bool ClientConnection::drainInventorySync(
+    std::array<std::tuple<uint16_t,uint16_t,uint16_t>, 36>& slots) {
+    std::lock_guard<std::mutex> lock(inventoryMutex_);
+    if (!hasPendingInventorySync_) return false;
+    slots = pendingInventorySlots_;
+    hasPendingInventorySync_ = false;
+    return true;
 }
 
 void ClientConnection::handleHealthUpdate(PacketBuffer& buf) {

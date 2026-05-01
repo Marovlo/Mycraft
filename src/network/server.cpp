@@ -40,7 +40,24 @@ bool Server::start(const std::string& worldPath, int64_t seed, uint16_t port) {
     terrainGen_ = std::make_unique<OverworldGenerator>(static_cast<int>(seed));
 
     // 初始化存档管理器
-    saveManager_.setWorld("server_world", worldPath);
+    // worldPath 已经是完整的世界目录（如 saves/MyWorld）
+    // 直接使用 worldPath 作为 worldDir_，不再拼接子目录
+    {
+        // 提取世界名（路径的最后一个组件）
+        std::string wName = worldPath;
+        auto slash = wName.rfind('/');
+        if (slash != std::string::npos) wName = wName.substr(slash + 1);
+        auto backslash = wName.rfind('\\');
+        if (backslash != std::string::npos) wName = wName.substr(backslash + 1);
+
+        // basePath 是 worldPath 的父目录
+        std::string basePath = worldPath;
+        auto sep = basePath.rfind('/');
+        if (sep != std::string::npos) basePath = basePath.substr(0, sep);
+        else basePath = ".";
+
+        saveManager_.setWorld(wName, basePath);
+    }
 
     // 加载世界数据（如果存在）
     // TODO: 从存档加载 totalTicks_、天气等
@@ -241,14 +258,47 @@ void Server::handleLogin(uint32_t senderId, PacketBuffer& buf) {
     // 认证玩家
     network_.setClientAuthenticated(senderId, playerName);
 
-    // 创建服务端玩家状态
+    // 创建服务端玩家状态，尝试从存档加载
     {
         std::lock_guard<std::mutex> lock(playersMutex_);
         ServerPlayer player;
         player.playerId = senderId;
         player.name = playerName;
         player.position = glm::vec3(0.0f, 80.0f, 0.0f);  // 默认出生点
-        // TODO: 从存档加载玩家位置
+
+        // 从存档加载玩家数据
+        Player tmpPlayer;
+        Inventory tmpInventory;
+        if (saveManager_.loadPlayerByName(playerName, tmpPlayer, tmpInventory)) {
+            player.position = tmpPlayer.position;
+            player.yaw = tmpPlayer.yaw;
+            player.pitch = tmpPlayer.pitch;
+            player.health = tmpPlayer.hp;
+            player.hunger = static_cast<float>(tmpPlayer.hunger);
+            player.saturation = tmpPlayer.saturation;
+            player.inventory = tmpInventory;
+            std::cout << "[Server] Loaded player '" << playerName << "' at ("
+                      << player.position.x << ", " << player.position.y << ", "
+                      << player.position.z << ")\n";
+        } else {
+            // 新玩家：计算地形高度作为出生点
+            if (terrainGen_) {
+                auto* gen = dynamic_cast<OverworldGenerator*>(terrainGen_.get());
+                int surfaceY = gen ? gen->getTerrainHeight(0, 0) : 64;
+                int spawnY = std::max(surfaceY, 63) + 2;  // +2 确保在地面上方
+                player.position = glm::vec3(0.5f, static_cast<float>(spawnY), 0.5f);
+            }
+            // 给新玩家初始物品
+            player.inventory.getSlot(0) = {Item::IronPickaxe,  1, 0};
+            player.inventory.getSlot(1) = {Item::WoodenAxe,     1, 0};
+            player.inventory.getSlot(2) = {Item::WoodenShovel,  1, 0};
+            player.inventory.getSlot(3) = {Item::WoodenPickaxe, 1, 0};
+            player.inventory.getSlot(4) = {Item::Torch,         64, 0};
+            std::cout << "[Server] New player '" << playerName << "', starting at ("
+                      << player.position.x << ", " << player.position.y << ", "
+                      << player.position.z << ")\n";
+        }
+
         players_[senderId] = player;
     }
 
@@ -259,10 +309,10 @@ void Server::handleLogin(uint32_t senderId, PacketBuffer& buf) {
         network_.sendToClient(senderId, PacketType::S2C_LoginSuccess, resp, NetChannel::Reliable);
     }
 
-    // 发送世界信息
+    // 发送世界信息（含玩家位置作为出生点）
     sendWorldInfo(senderId);
 
-    // 发送背包同步
+    // 发送背包同步（真实数据）
     sendInventorySync(senderId);
 
     // 通知其他玩家
@@ -467,13 +517,18 @@ void Server::broadcastPlayerPosition(uint32_t playerId) {
 }
 
 void Server::sendInventorySync(uint32_t playerId) {
-    // TODO: 序列化玩家背包并发送
+    std::lock_guard<std::mutex> lock(playersMutex_);
+    auto it = players_.find(playerId);
+    if (it == players_.end()) return;
+
+    const Inventory& inv = it->second.inventory;
     PacketBuffer buf;
-    // 暂时发送空背包
     buf.writeU8(36);  // 36 个槽位
     for (int i = 0; i < 36; i++) {
-        buf.writeU8(0);  // 空槽位
-        buf.writeU8(0);
+        const ItemStack& slot = inv.getSlot(i);
+        buf.writeU16(static_cast<uint16_t>(slot.id));
+        buf.writeU16(static_cast<uint16_t>(slot.count));
+        buf.writeU16(static_cast<uint16_t>(slot.durability));
     }
     network_.sendToClient(playerId, PacketType::S2C_InventorySync, buf, NetChannel::Reliable);
 }
@@ -489,8 +544,28 @@ void Server::onPlayerDisconnect(uint32_t playerId) {
 
     broadcastPlayerLeave(playerId);
 
-    std::lock_guard<std::mutex> lock(playersMutex_);
-    players_.erase(playerId);
+    // 保存玩家数据
+    {
+        std::lock_guard<std::mutex> lock(playersMutex_);
+        auto it = players_.find(playerId);
+        if (it != players_.end()) {
+            const ServerPlayer& sp = it->second;
+            // 构造 Player 对象用于序列化
+            Player tmpPlayer;
+            tmpPlayer.position = sp.position;
+            tmpPlayer.yaw = sp.yaw;
+            tmpPlayer.pitch = sp.pitch;
+            tmpPlayer.hp = sp.health;
+            tmpPlayer.hunger = static_cast<int>(sp.hunger);
+            tmpPlayer.saturation = sp.saturation;
+            tmpPlayer.spawnPoint = sp.position;  // 保存当前位置为出生点
+
+            if (saveManager_.savePlayerByName(sp.name, tmpPlayer, sp.inventory)) {
+                std::cout << "[Server] Saved player '" << sp.name << "'\n";
+            }
+            players_.erase(it);
+        }
+    }
 }
 
 void Server::broadcastPlayerJoin(uint32_t playerId) {
@@ -539,7 +614,21 @@ void Server::tickFurnaces() {
 void Server::tickAutoSave() {
     if (totalTicks_ - lastAutoSaveTick_ >= AUTOSAVE_INTERVAL) {
         lastAutoSaveTick_ = totalTicks_;
-        // TODO: 保存脏区块和玩家数据
         std::cout << "[Server] Auto-saving..." << std::endl;
+
+        // 保存所有在线玩家数据
+        std::lock_guard<std::mutex> lock(playersMutex_);
+        for (auto& [id, sp] : players_) {
+            Player tmpPlayer;
+            tmpPlayer.position = sp.position;
+            tmpPlayer.yaw = sp.yaw;
+            tmpPlayer.pitch = sp.pitch;
+            tmpPlayer.hp = sp.health;
+            tmpPlayer.hunger = static_cast<int>(sp.hunger);
+            tmpPlayer.saturation = sp.saturation;
+            tmpPlayer.spawnPoint = sp.position;
+
+            saveManager_.savePlayerByName(sp.name, tmpPlayer, sp.inventory);
+        }
     }
 }

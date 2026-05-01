@@ -298,10 +298,22 @@ void Game::enterWorld(const std::string& worldName, int64_t seed) {
         // 将在下一帧处理返回菜单
     });
 
-    // 设置存档目录
+    // 设置背包同步回调：服务器登录时下发玩家背包数据
+    conn.setOnInventorySync([this](const auto& slots) {
+        for (int i = 0; i < 36; i++) {
+            auto [itemId, count, durability] = slots[i];
+            ItemStack& slot = inventory_.getSlot(i);
+            slot.id         = static_cast<ItemId>(itemId);
+            slot.count      = count;
+            slot.durability = durability;
+        }
+        std::cout << "[Save] Inventory synced from server\n";
+    });
+
+    // 设置存档目录（用于 chests/furnaces/entities 等世界数据）
     saveManager_.setWorld(worldName, savesBasePath_);
 
-    // 尝试加载已有存档
+    // 尝试加载已有存档（世界元数据：seed、ticks、天气等）
     bool hasExistingSave = false;
     {
         int64_t loadedSeed = worldSeed_;
@@ -332,17 +344,9 @@ void Game::enterWorld(const std::string& worldName, int64_t seed) {
         blockUpdateSystem_.notifyNeighbors(world_, x, y, z, tickClock_.getTotalTicks());
     });
 
-    // 加载玩家数据
-    bool playerLoaded = false;
+    // 加载世界数据（chests、furnaces、entities）
+    // 注意：玩家数据（位置、背包、HP）由服务器在 handleLogin 时加载并通过网络下发
     if (hasExistingSave) {
-        playerLoaded = saveManager_.loadPlayer(player_, inventory_);
-        if (playerLoaded) {
-            prevPlayerPos_ = player_.position;
-            std::cout << "[Save] Player loaded at ("
-                      << player_.position.x << ", "
-                      << player_.position.y << ", "
-                      << player_.position.z << ")\n";
-        }
         // Restore dropped item entities
         if (saveManager_.loadEntities(entityManager_)) {
             std::cout << "[Save] Loaded " << entityManager_.count() << " entities.\n";
@@ -379,27 +383,34 @@ void Game::enterWorld(const std::string& worldName, int64_t seed) {
         }
     }
 
-    // 新世界：计算出生点并给予初始物品
-    if (!playerLoaded) {
-        auto* gen = dynamic_cast<OverworldGenerator*>(terrainGen_.get());
-        int surfaceY = gen ? gen->getTerrainHeight(0, 0) : SEA_LEVEL;
-        int spawnY = std::max(surfaceY, SEA_LEVEL) + 1;
-        player_.position   = glm::vec3(0.5f, static_cast<float>(spawnY), 0.5f);
-        player_.spawnPoint = player_.position;
-        player_.fallStartY = player_.position.y;
-        prevPlayerPos_     = player_.position;
-
-        inventory_.getSlot(0) = {Item::IronPickaxe,  1, 0};
-        inventory_.getSlot(1) = {Item::WoodenAxe,     1, 0};
-        inventory_.getSlot(2) = {Item::WoodenShovel,  1, 0};
-        inventory_.getSlot(3) = {Item::WoodenPickaxe,  1, 0};
-        inventory_.getSlot(4) = {Item::Torch,          64, 0};
-    }
-
     // 重置行走音效计时器
     stepSoundDistance_ = 0.0f;
     digSoundTimer_ = 0;
     positionSendTimer_ = 0;
+
+    // 主动拉取服务器在握手期间下发的背包数据
+    // （握手时回调可能尚未注册，数据已缓存在 ClientConnection 中）
+    {
+        auto& conn = integratedServer_->getConnection();
+        std::array<std::tuple<uint16_t,uint16_t,uint16_t>, 36> slots;
+        if (conn.drainInventorySync(slots)) {
+            for (int i = 0; i < 36; i++) {
+                auto [itemId, count, durability] = slots[i];
+                ItemStack& slot = inventory_.getSlot(i);
+                slot.id         = static_cast<ItemId>(itemId);
+                slot.count      = count;
+                slot.durability = durability;
+            }
+            std::cout << "[Save] Inventory applied from server sync\n";
+        }
+
+        // 使用服务器下发的出生点（含玩家上次位置）
+        glm::vec3 spawn = conn.getSpawnPosition();
+        player_.position = spawn;
+        player_.spawnPoint = spawn;
+        player_.fallStartY = spawn.y;
+        prevPlayerPos_ = spawn;
+    }
 
     // 切换到游戏状态
     gameState_ = GameState::Playing;
@@ -521,6 +532,17 @@ void Game::connectToServer(const std::string& host, uint16_t port, const std::st
         std::cout << "[Game] Disconnected: " << reason << std::endl;
         connectStatus_ = "Disconnected: " + reason;
     });
+    // 背包同步回调：服务器登录时下发玩家背包数据
+    clientConnection_->setOnInventorySync([this](const auto& slots) {
+        for (int i = 0; i < 36; i++) {
+            auto [itemId, count, durability] = slots[i];
+            ItemStack& slot = inventory_.getSlot(i);
+            slot.id         = static_cast<ItemId>(itemId);
+            slot.count      = count;
+            slot.durability = durability;
+        }
+        std::cout << "[Save] Inventory synced from server\n";
+    });
 
     if (!clientConnection_->connect(host, port, playerName)) {
         std::cerr << "[Game] Failed to connect to server\n";
@@ -579,6 +601,21 @@ void Game::connectToServer(const std::string& host, uint16_t port, const std::st
     player_.position = spawn;
     player_.spawnPoint = spawn;
     prevPlayerPos_ = spawn;
+
+    // 主动拉取服务器在握手期间下发的背包数据
+    {
+        std::array<std::tuple<uint16_t,uint16_t,uint16_t>, 36> slots;
+        if (clientConnection_->drainInventorySync(slots)) {
+            for (int i = 0; i < 36; i++) {
+                auto [itemId, count, durability] = slots[i];
+                ItemStack& slot = inventory_.getSlot(i);
+                slot.id         = static_cast<ItemId>(itemId);
+                slot.count      = count;
+                slot.durability = durability;
+            }
+            std::cout << "[Save] Inventory applied from server sync\n";
+        }
+    }
 
     stepSoundDistance_ = 0.0f;
     digSoundTimer_ = 0;
@@ -697,8 +734,9 @@ void Game::run() {
 // ============================================================
 
 void Game::saveAll() {
-    // Save player state + inventory
-    saveManager_.savePlayer(player_, inventory_);
+    // 注意：玩家数据（位置、背包、HP等）由服务器（IntegratedServer）负责保存
+    // 服务器在玩家断开连接时自动保存到 players/<name>.dat
+    // 客户端只负责保存世界数据（区块、chests、furnaces、entities）
 
     // Save dropped item entities
     saveManager_.saveEntities(entityManager_);

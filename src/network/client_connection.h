@@ -9,6 +9,8 @@
 #include <functional>
 #include <mutex>
 #include <unordered_map>
+#include <array>
+#include <tuple>
 #include <glm/glm.hpp>
 
 // ============================================================
@@ -86,6 +88,10 @@ public:
     // 获取并清空接收到的区块数据
     std::vector<ReceivedChunkData> drainChunkData();
 
+    // 获取并清空待应用的背包同步数据（如果有）
+    // 返回 true 表示有数据，slots 被填充
+    bool drainInventorySync(std::array<std::tuple<uint16_t,uint16_t,uint16_t>, 36>& slots);
+
     // 获取远程玩家列表
     const std::unordered_map<uint32_t, RemotePlayer>& getRemotePlayers() const {
         return remotePlayers_;
@@ -95,10 +101,14 @@ public:
     using BlockChangeCallback = std::function<void(int x, int y, int z, uint8_t blockId)>;
     using ChatCallback = std::function<void(const std::string& sender, const std::string& msg)>;
     using DisconnectCallback = std::function<void(const std::string& reason)>;
+    // itemId, count, durability 各 36 个槽位
+    using InventorySyncCallback = std::function<void(
+        const std::array<std::tuple<uint16_t,uint16_t,uint16_t>, 36>&)>;
 
     void setOnBlockChange(BlockChangeCallback cb) { onBlockChange_ = std::move(cb); }
     void setOnChat(ChatCallback cb) { onChat_ = std::move(cb); }
     void setOnDisconnect(DisconnectCallback cb) { onDisconnect_ = std::move(cb); }
+    void setOnInventorySync(InventorySyncCallback cb) { onInventorySync_ = std::move(cb); }
 
 private:
     void processPackets();
@@ -137,6 +147,11 @@ private:
     std::vector<ReceivedChunkData> receivedChunks_;
     std::mutex chunkMutex_;
 
+    // 缓存的背包同步数据（登录时服务器下发，Game 层主动拉取）
+    bool hasPendingInventorySync_ = false;
+    std::array<std::tuple<uint16_t,uint16_t,uint16_t>, 36> pendingInventorySlots_{};
+    std::mutex inventoryMutex_;
+
     // 远程玩家
     std::unordered_map<uint32_t, RemotePlayer> remotePlayers_;
 
@@ -144,4 +159,5 @@ private:
     BlockChangeCallback onBlockChange_;
     ChatCallback onChat_;
     DisconnectCallback onDisconnect_;
+    InventorySyncCallback onInventorySync_;
 };

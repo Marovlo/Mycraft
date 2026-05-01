@@ -58,7 +58,11 @@ void SaveManager::setWorld(const std::string& worldName, const std::string& base
 }
 
 std::string SaveManager::playerPath() const {
-    return worldDir_ + "/player.dat";
+    return worldDir_ + "/players/player.dat";
+}
+
+std::string SaveManager::playerPathByName(const std::string& playerName) const {
+    return worldDir_ + "/players/" + playerName + ".dat";
 }
 
 std::string SaveManager::levelPath() const {
@@ -71,8 +75,13 @@ std::string SaveManager::entitiesPath() const {
 
 // ========== Player save/load ==========
 
-bool SaveManager::savePlayer(const Player& player, const Inventory& inventory) {
-    std::string tmpPath = playerPath() + ".tmp";
+bool SaveManager::savePlayerByName(const std::string& playerName,
+                                    const Player& player, const Inventory& inventory) {
+    // 确保 players/ 目录存在
+    ensureDirectory(worldDir_ + "/players");
+
+    std::string path = playerPathByName(playerName);
+    std::string tmpPath = path + ".tmp";
     {
         BinaryWriter w(tmpPath);
         if (!w.isValid()) {
@@ -88,27 +97,29 @@ bool SaveManager::savePlayer(const Player& player, const Inventory& inventory) {
 
     // Atomic replace: rename tmp → final
     std::error_code ec;
-    fs::rename(tmpPath, playerPath(), ec);
+    fs::rename(tmpPath, path, ec);
     if (ec) {
-        std::cerr << "[Save] Failed to rename " << tmpPath << " → " << playerPath()
+        std::cerr << "[Save] Failed to rename " << tmpPath << " → " << path
                   << ": " << ec.message() << "\n";
         fs::remove(tmpPath, ec);
         return false;
     }
 
-    VLOG(DebugCat::Save, "Player data saved to %s", playerPath().c_str());
+    VLOG(DebugCat::Save, "Player '%s' data saved to %s", playerName.c_str(), path.c_str());
     return true;
 }
 
-bool SaveManager::loadPlayer(Player& player, Inventory& inventory) {
-    if (!fileExists(playerPath())) return false;
+bool SaveManager::loadPlayerByName(const std::string& playerName,
+                                    Player& player, Inventory& inventory) {
+    std::string path = playerPathByName(playerName);
+    if (!fileExists(path)) return false;
 
-    BinaryReader r(playerPath());
+    BinaryReader r(path);
     if (!r.isValid()) return false;
 
     uint16_t version;
     if (!r.readHeader(VCFile::Type::Player, VCFile::VERSION_PLAYER, version)) {
-        std::cerr << "[Save] Invalid player.dat header\n";
+        std::cerr << "[Save] Invalid player.dat header for '" << playerName << "'\n";
         return false;
     }
 
@@ -116,12 +127,21 @@ bool SaveManager::loadPlayer(Player& player, Inventory& inventory) {
     inventory.deserialize(r);
 
     if (!r.isValid()) {
-        std::cerr << "[Save] player.dat appears truncated\n";
+        std::cerr << "[Save] player.dat appears truncated for '" << playerName << "'\n";
         return false;
     }
 
-    VLOG(DebugCat::Save, "Player data loaded from %s", playerPath().c_str());
+    VLOG(DebugCat::Save, "Player '%s' data loaded from %s", playerName.c_str(), path.c_str());
     return true;
+}
+
+// Legacy shortcuts — delegate to named version with "player"
+bool SaveManager::savePlayer(const Player& player, const Inventory& inventory) {
+    return savePlayerByName("player", player, inventory);
+}
+
+bool SaveManager::loadPlayer(Player& player, Inventory& inventory) {
+    return loadPlayerByName("player", player, inventory);
 }
 
 // ========== Level data save/load ==========
