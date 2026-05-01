@@ -43,6 +43,7 @@ static bool mobCollidesWithBlocks(const World& world, const glm::vec3& pos, floa
 }
 
 void EntityManager::tick(World& world, Player& player, Inventory& inventory) {
+    isTicking_ = true;  // 标记 tick 进行中，spawn 操作写入 pendingEntities_
     glm::vec3 playerCentre = player.position;
 
     // 调试：每20tick打印一次实体统计
@@ -236,6 +237,16 @@ void EntityManager::tick(World& world, Player& player, Inventory& inventory) {
         std::remove_if(entities_.begin(), entities_.end(),
                        [](const std::unique_ptr<Entity>& e) { return !e || !e->alive; }),
         entities_.end());
+
+    // tick 结束，合并 tick 期间新生成的实体
+    isTicking_ = false;
+    if (!pendingEntities_.empty()) {
+        entities_.reserve(entities_.size() + pendingEntities_.size());
+        for (auto& e : pendingEntities_) {
+            entities_.push_back(std::move(e));
+        }
+        pendingEntities_.clear();
+    }
 }
 
 void EntityManager::spawnItem(const glm::vec3& worldPos, const ItemStack& stack,
@@ -256,7 +267,7 @@ void EntityManager::spawnItem(const glm::vec3& worldPos, const ItemStack& stack,
     item->prevVisualYaw = item->visualYaw;
     VLOG(DebugCat::Entity, "spawn itemId=%u count=%u pos=(%.2f,%.2f,%.2f)",
          stack.id, stack.count, worldPos.x, worldPos.y, worldPos.z);
-    entities_.push_back(std::move(item));
+    addEntity(std::move(item));
 }
 
 void EntityManager::spawnArrow(const glm::vec3& from, const glm::vec3& dir,
@@ -266,7 +277,7 @@ void EntityManager::spawnArrow(const glm::vec3& from, const glm::vec3& dir,
     arrow->launch(from, dir, speed, damage);
     VLOG(DebugCat::Entity, "spawn arrow pos=(%.2f,%.2f,%.2f) dir=(%.2f,%.2f,%.2f) spd=%.2f dmg=%d",
          from.x, from.y, from.z, dir.x, dir.y, dir.z, speed, damage);
-    entities_.push_back(std::move(arrow));
+    addEntity(std::move(arrow));
 }
 
 void EntityManager::spawnXPOrbs(const glm::vec3& worldPos, int totalXP) {
@@ -290,6 +301,6 @@ void EntityManager::spawnXPOrbs(const glm::vec3& worldPos, int totalXP) {
         orb->visualPhase = static_cast<float>(std::rand()) / static_cast<float>(RAND_MAX) * 6.2831853f;
         VLOG(DebugCat::Entity, "spawn xp orb value=%d pos=(%.2f,%.2f,%.2f)",
              xpVal, worldPos.x, worldPos.y, worldPos.z);
-        entities_.push_back(std::move(orb));
+        addEntity(std::move(orb));
     }
 }

@@ -37,7 +37,15 @@ public:
     void clear() { entities_.clear(); }
 
     // Direct insertion (used by save/load to restore persisted entities)
-    void addEntity(std::unique_ptr<Entity> e) { entities_.push_back(std::move(e)); }
+    // NOTE: 在 tick() 期间调用时，实体会被放入 pendingEntities_ 队列，
+    // tick 结束后统一合并，避免遍历时修改 vector 导致迭代器失效。
+    void addEntity(std::unique_ptr<Entity> e) {
+        if (isTicking_) {
+            pendingEntities_.push_back(std::move(e));
+        } else {
+            entities_.push_back(std::move(e));
+        }
+    }
 
     // 物品拾取回调：拾取成功时触发（用于通知 Game 层标记物品栏脏）
     using ItemPickupCallback = std::function<void()>;
@@ -46,6 +54,10 @@ public:
 
 private:
     std::vector<std::unique_ptr<Entity>> entities_;
+    // tick() 期间新生成的实体暂存于此，tick 结束后合并到 entities_
+    // 避免在 range-for 遍历 entities_ 时 push_back 导致迭代器失效（UB/段错误）
+    std::vector<std::unique_ptr<Entity>> pendingEntities_;
+    bool isTicking_ = false;
     // 性能优化：缓存活跃生物索引，避免每帧在 O(n²) 碰撞中重复判断
     std::vector<size_t> activeMobs_;
 
