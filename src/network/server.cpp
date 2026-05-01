@@ -235,6 +235,14 @@ void Server::processPackets() {
     for (auto& pkt : packets) {
         PacketBuffer buf(std::move(pkt.data));
 
+        // 调试：打印所有非高频包
+        if (pkt.type != PacketType::C2S_PlayerPosition &&
+            pkt.type != PacketType::C2S_KeepAlive) {
+            std::cout << "[Server] processPackets: type=0x"
+                      << std::hex << (int)pkt.type << std::dec
+                      << " sender=" << pkt.senderId << "\n";
+        }
+
         switch (pkt.type) {
             case PacketType::C2S_Login:
                 handleLogin(pkt.senderId, buf);
