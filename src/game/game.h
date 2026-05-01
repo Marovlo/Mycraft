@@ -91,6 +91,7 @@ private:
     void handleRightClick();
     void releaseBow();  // 松开弓：射出箭矢
     void sendNetworkAction(PlayerActionType action);  // 发送动作到服务器广播
+    ClientConnection* getActiveConnection();          // 获取当前活跃的网络连接（单人/多人通用）
     void updateChunks();
     void buildMeshes();
     void unloadDistantChunks();

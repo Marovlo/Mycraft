@@ -32,6 +32,11 @@ public:
     using InventoryChangedCallback = std::function<void()>;
     InventoryChangedCallback onInventoryChanged;
 
+    // Optional callback invoked AFTER a block is removed from the world.
+    // Parameters: (x, y, z). Used by Game to send C2S_BlockDig to server in multiplayer.
+    using BlockDiggedCallback = std::function<void(int, int, int)>;
+    BlockDiggedCallback onBlockDigged;
+
     // Called from Game::gameTick(). Reach is the maximum interaction distance
     // (matches Player::MAX_REACH). `entityMgr` is where drops are spawned.
     void tick(World& world, Player& player, Inventory& inventory,

@@ -149,6 +149,11 @@ void BlockInteraction::tick(World& world, Player& player, Inventory& inventory,
         // 4) Remove the block. World marks neighbors dirty on its own.
         world.setBlock(state_.blockX, state_.blockY, state_.blockZ, Block::Air);
 
+        // 5) 通知服务器（多人模式）：方块已被挖掉
+        if (onBlockDigged) {
+            onBlockDigged(state_.blockX, state_.blockY, state_.blockZ);
+        }
+
         // 4) Cost durability on the currently-held tool.
         ItemStack& slot = inventory.getHeldItem();
         if (!slot.isEmpty()) {

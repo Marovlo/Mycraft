@@ -150,6 +150,14 @@ void Game::registerBlockInteractions() {
     blockInteraction_.onInventoryChanged = [this]() {
         inventoryDirty_ = true;
     };
+
+    // 注册挖方块完成回调：多人模式下通知服务器方块已被挖掉
+    blockInteraction_.onBlockDigged = [this](int bx, int by, int bz) {
+        ClientConnection* conn = getActiveConnection();
+        if (conn) {
+            conn->sendBlockDig(PlayerActionType::FinishDigging, bx, by, bz);
+        }
+    };
 }
 
 // ============================================================
@@ -1528,6 +1536,12 @@ void Game::handleRightClick() {
             inventoryDirty_ = true;  // 放置方块消耗物品，通知服务器
             player_.startSwing();  // 放置方块时触发挥动动画
 
+            // 多人模式：通知服务器方块已放置
+            ClientConnection* conn = getActiveConnection();
+            if (conn) {
+                conn->sendBlockPlace(px, py, pz, itemProps.blockId);
+            }
+
             // 播放方块放置音效
             SoundMaterial mat = BlockSoundMap::instance().getMaterial(itemProps.blockId);
             glm::vec3 blockCenter(px + 0.5f, py + 0.5f, pz + 0.5f);
@@ -1592,15 +1606,19 @@ void Game::releaseBow() {
 }
 
 void Game::sendNetworkAction(PlayerActionType action) {
-    ClientConnection* conn = nullptr;
-    if (integratedServer_) {
-        conn = &integratedServer_->getConnection();
-    } else if (clientConnection_) {
-        conn = clientConnection_.get();
-    }
+    ClientConnection* conn = getActiveConnection();
     if (conn && conn->isConnected()) {
         conn->sendPlayerAction(action);
     }
+}
+
+ClientConnection* Game::getActiveConnection() {
+    if (integratedServer_) {
+        return &integratedServer_->getConnection();
+    } else if (clientConnection_) {
+        return clientConnection_.get();
+    }
+    return nullptr;
 }
 
 void Game::handleTickInput() {
